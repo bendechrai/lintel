@@ -643,3 +643,72 @@ pub enum Pick {
     Roof(Id),
     Patch(Id),
 }
+
+// ---------------------------------------------------------------------------------------------
+// Finding things by id, on whichever level they live
+
+impl Project {
+    pub fn wall_mut(&mut self, id: Id) -> Option<&mut Wall> {
+        self.levels.iter_mut().flat_map(|l| &mut l.walls).find(|w| w.id == id)
+    }
+
+    pub fn wall(&self, id: Id) -> Option<&Wall> {
+        self.levels.iter().flat_map(|l| &l.walls).find(|w| w.id == id)
+    }
+
+    pub fn opening_mut(&mut self, wall: Id, id: Id) -> Option<&mut Opening> {
+        self.wall_mut(wall)?.openings.iter_mut().find(|o| o.id == id)
+    }
+
+    pub fn opening(&self, wall: Id, id: Id) -> Option<&Opening> {
+        self.wall(wall)?.openings.iter().find(|o| o.id == id)
+    }
+
+    pub fn room_mut(&mut self, id: Id) -> Option<&mut Room> {
+        self.levels.iter_mut().flat_map(|l| &mut l.rooms).find(|r| r.id == id)
+    }
+
+    pub fn room(&self, id: Id) -> Option<&Room> {
+        self.levels.iter().flat_map(|l| &l.rooms).find(|r| r.id == id)
+    }
+
+    pub fn stair_mut(&mut self, id: Id) -> Option<&mut Stair> {
+        self.levels.iter_mut().flat_map(|l| &mut l.stairs).find(|r| r.id == id)
+    }
+
+    pub fn stair(&self, id: Id) -> Option<&Stair> {
+        self.levels.iter().flat_map(|l| &l.stairs).find(|r| r.id == id)
+    }
+
+    pub fn fixture_mut(&mut self, id: Id) -> Option<&mut Fixture> {
+        self.levels.iter_mut().flat_map(|l| &mut l.fixtures).find(|r| r.id == id)
+    }
+
+    pub fn fixture(&self, id: Id) -> Option<&Fixture> {
+        self.levels.iter().flat_map(|l| &l.fixtures).find(|r| r.id == id)
+    }
+
+    pub fn furniture_mut(&mut self, id: Id) -> Option<&mut Furniture> {
+        self.levels.iter_mut().flat_map(|l| &mut l.furniture).find(|r| r.id == id)
+    }
+
+    pub fn furniture(&self, id: Id) -> Option<&Furniture> {
+        self.levels.iter().flat_map(|l| &l.furniture).find(|r| r.id == id)
+    }
+
+    pub fn roof_mut(&mut self, id: Id) -> Option<&mut Roof> {
+        self.roofs.iter_mut().find(|r| r.id == id)
+    }
+
+    pub fn roof(&self, id: Id) -> Option<&Roof> {
+        self.roofs.iter().find(|r| r.id == id)
+    }
+
+    pub fn patch_mut(&mut self, id: Id) -> Option<&mut Patch> {
+        self.site.patches.iter_mut().find(|r| r.id == id)
+    }
+
+    pub fn patch(&self, id: Id) -> Option<&Patch> {
+        self.site.patches.iter().find(|r| r.id == id)
+    }
+}

@@ -1,0 +1,784 @@
+//! Editor state and the operations on it. Views read `State`; handlers call these methods.
+
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use rune::TextEdit;
+
+use crate::camera::{Camera, Projection};
+use crate::geom;
+use crate::gfx::{Host, Sun, Viewport};
+use crate::mesh::{self, BuildOptions};
+use crate::model::*;
+use crate::scene::Scene;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewMode {
+    Plan,
+    Elevation,
+    Model,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum Tool {
+    Select,
+    Wall,
+    Room,
+    Door,
+    Window,
+    Passage,
+    Garage,
+    Recess,
+    Stair,
+    Fixture(FixtureKind),
+    Furniture(String),
+    Patch,
+    Roof,
+}
+
+impl Tool {
+    pub fn hint(&self) -> &'static str {
+        match self {
+            Tool::Select => "Click to select. Drag things to move them, drag empty space to pan, scroll to zoom.",
+            Tool::Wall => "Drag to draw a wall. Ends snap to other walls and to the grid; hold Shift to draw off-axis.",
+            Tool::Room => "Drag a rectangle for the room's floor. Drag its corners afterwards; double-click an edge to add a corner.",
+            Tool::Door | Tool::Window | Tool::Passage | Tool::Garage | Tool::Recess => "Click on a wall to place it there.",
+            Tool::Stair => "Drag from the foot of the stair toward the top.",
+            Tool::Fixture(_) => "Click to place: wall fixtures go on the nearest wall face, ceiling fixtures where you click.",
+            Tool::Furniture(_) => "Click to place it. Press R to turn the selected piece.",
+            Tool::Patch => "Drag a rectangle of ground to surface (a driveway, path or patio).",
+            Tool::Roof => "Drag a rectangle over the walls the roof covers.",
+        }
+    }
+}
+
+/// The plan view's camera: the model point at the centre of the canvas, and points per metre.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlanCam {
+    pub center: P2,
+    pub zoom: f32,
+}
+
+impl PlanCam {
+    pub fn to_screen(&self, p: P2, size: [f32; 2]) -> [f32; 2] {
+        [(p[0] - self.center[0]) * self.zoom + size[0] / 2.0, (self.center[1] - p[1]) * self.zoom + size[1] / 2.0]
+    }
+
+    pub fn to_model(&self, s: [f32; 2], size: [f32; 2]) -> P2 {
+        [(s[0] - size[0] / 2.0) / self.zoom + self.center[0], self.center[1] - (s[1] - size[1] / 2.0) / self.zoom]
+    }
+
+    /// Zoom by `factor`, keeping the model point under `at` (canvas points) where it is.
+    pub fn zoom_about(&mut self, at: [f32; 2], size: [f32; 2], factor: f32) {
+        let before = self.to_model(at, size);
+        self.zoom = (self.zoom * factor).clamp(4.0, 600.0);
+        let after = self.to_model(at, size);
+        self.center = geom::add(self.center, geom::sub(before, after));
+    }
+}
+
+/// Which way an elevation looks at the house from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    South,
+    East,
+    North,
+    West,
+}
+
+impl Side {
+    pub const ALL: [Side; 4] = [Side::South, Side::East, Side::North, Side::West];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Side::South => "South",
+            Side::East => "East",
+            Side::North => "North",
+            Side::West => "West",
+        }
+    }
+
+    /// Direction from the house toward the viewer.
+    pub fn yaw(self) -> f32 {
+        match self {
+            Side::South => -std::f32::consts::FRAC_PI_2,
+            Side::East => 0.0,
+            Side::North => std::f32::consts::FRAC_PI_2,
+            Side::West => std::f32::consts::PI,
+        }
+    }
+}
+
+/// A gesture in progress on the plan canvas.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DragOp {
+    Idle,
+    Pan { center: P2 },
+    /// Moving the selection: `grab` is where the press landed, in model space.
+    Move { pick: Pick, grab: P2 },
+    /// Moving walls' ends that meet at a corner: (wall, 0 for `a` or 1 for `b`).
+    WallEnds { ends: Vec<(Id, u8)> },
+    /// Moving one corner of a room or patch outline.
+    Vertex { pick: Pick, index: usize },
+    /// Drawing: from `a` to `b`, both snapped.
+    Draw { a: P2, b: P2 },
+}
+
+/// A value being typed into an inspector field.
+pub struct Editing {
+    pub key: String,
+    pub edit: TextEdit,
+    pub apply: Rc<dyn Fn(&mut State, &str)>,
+}
+
+/// The terrain fetch form.
+pub struct GeoForm {
+    pub lat: TextEdit,
+    pub lon: TextEdit,
+    pub span: f32,
+    pub status: String,
+    pub request: rune::Latest<Result<crate::geo::Fetched, String>>,
+}
+
+pub struct State {
+    pub project: Project,
+    pub path: Option<PathBuf>,
+    pub dirty: bool,
+    undo: Vec<Project>,
+    redo: Vec<Project>,
+    /// What the last checkpoint was for, so a run of the same edit (a scrub, a nudge) is one undo.
+    last_edit: String,
+
+    pub view: ViewMode,
+    /// The level the plan shows and edits.
+    pub level: Id,
+    pub tool: Tool,
+    pub selected: Option<Pick>,
+    pub hovered: Option<Pick>,
+
+    pub plan: PlanCam,
+    /// Size of the drawing area, in points.
+    pub canvas: [f32; 2],
+    pub drag: DragOp,
+    /// The pointer on the plan, in model space, snapped: where a tool would act.
+    pub cursor: Option<P2>,
+    pub show_roofs: bool,
+    pub show_site: bool,
+    pub show_furniture: bool,
+    pub show_fixtures: bool,
+    pub show_below: bool,
+    /// Thickness of the next wall the wall tool draws.
+    pub wall_width: f32,
+    /// True once the plan (or the elevation) has been panned or zoomed by hand, so a window
+    /// resize stops refitting it.
+    pub plan_moved: bool,
+    pub elevation_moved: bool,
+    /// Scratch field for a text input with nothing to edit.
+    pub scratch: TextEdit,
+    /// The slope the site panel's "make a slope" builds: bearing in degrees, fall in metres
+    /// per metre.
+    pub slope: (f32, f32),
+    /// Which catalogue groups are folded open in the tool panel.
+    pub open_groups: Vec<String>,
+    /// Pointer travel at the last event of a viewport drag.
+    pub drag_last: [f32; 2],
+
+    pub camera: Camera,
+    pub side: Side,
+    pub elevation: Camera,
+    /// Distance of the section plane behind the front of the house, when cutting.
+    pub section: Option<f32>,
+    pub sun: Sun,
+    pub options: BuildOptions,
+    scene: Arc<Scene>,
+    scene_revision: u64,
+    /// True when the project changed since the scene was built.
+    stale: bool,
+
+    pub editing: Option<Editing>,
+    /// The inspector row whose material picker is open.
+    pub picker: Option<String>,
+    pub name_edit: TextEdit,
+    pub geo: GeoForm,
+    pub status: String,
+    pub dark: bool,
+}
+
+impl State {
+    pub fn new(project: Project, path: Option<PathBuf>) -> State {
+        let level = project.levels.last().map(|l| l.id).unwrap_or(0);
+        let geo = GeoForm {
+            lat: TextEdit::new(project.site.geo.map(|g| g.lat.to_string()).unwrap_or_default()),
+            lon: TextEdit::new(project.site.geo.map(|g| g.lon.to_string()).unwrap_or_default()),
+            span: 40.0,
+            status: String::new(),
+            request: rune::Latest::default(),
+        };
+        let mut s = State {
+            name_edit: TextEdit::new(project.name.clone()),
+            project,
+            path,
+            dirty: false,
+            undo: vec![],
+            redo: vec![],
+            last_edit: String::new(),
+            view: ViewMode::Plan,
+            level,
+            tool: Tool::Select,
+            selected: None,
+            hovered: None,
+            plan: PlanCam { center: [0.0, 0.0], zoom: 40.0 },
+            canvas: [900.0, 700.0],
+            drag: DragOp::Idle,
+            cursor: None,
+            show_roofs: false,
+            show_site: true,
+            show_furniture: true,
+            show_fixtures: true,
+            show_below: true,
+            wall_width: 0.115,
+            plan_moved: false,
+            elevation_moved: false,
+            scratch: TextEdit::new(""),
+            slope: (90.0, 0.1),
+            open_groups: vec!["Living".into()],
+            drag_last: [0.0, 0.0],
+            camera: Camera::default(),
+            side: Side::South,
+            elevation: Camera::default(),
+            section: None,
+            sun: Sun::default(),
+            options: BuildOptions::default(),
+            scene: Arc::new(Scene::default()),
+            scene_revision: 0,
+            stale: true,
+            editing: None,
+            picker: None,
+            geo,
+            status: String::new(),
+            dark: false,
+        };
+        s.rebuild_scene();
+        s.fit_plan();
+        s.camera.frame(s.scene.bounds);
+        s.aim_elevation(true);
+        s
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // History
+
+    /// Call before changing the project. Consecutive calls with the same non-empty `tag` share
+    /// one undo step.
+    pub fn checkpoint(&mut self, tag: &str) {
+        if tag.is_empty() || tag != self.last_edit {
+            self.undo.push(self.project.clone());
+            if self.undo.len() > 200 {
+                self.undo.remove(0);
+            }
+        }
+        self.redo.clear();
+        self.last_edit = tag.to_string();
+    }
+
+    /// Change the project as one undoable step.
+    pub fn edit(&mut self, tag: &str, f: impl FnOnce(&mut Project)) {
+        self.checkpoint(tag);
+        f(&mut self.project);
+        self.touch();
+    }
+
+    /// The project changed.
+    pub fn touch(&mut self) {
+        self.dirty = true;
+        self.stale = true;
+        if self.view != ViewMode::Plan {
+            self.rebuild_scene();
+        }
+    }
+
+    /// Ends a run of same-tag edits, so the next one is its own undo step.
+    pub fn wall_thickness(&self) -> f32 {
+        self.wall_width
+    }
+
+    pub fn settle(&mut self) {
+        self.last_edit.clear();
+    }
+
+    /// Drops the newest checkpoint: the gesture it was for changed nothing.
+    pub fn forget_checkpoint(&mut self) {
+        self.undo.pop();
+        self.last_edit.clear();
+    }
+
+    /// The project as it was at the newest checkpoint (the start of the current gesture).
+    pub fn before(&self) -> Option<&Project> {
+        self.undo.last()
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
+    pub fn undo(&mut self) {
+        if let Some(p) = self.undo.pop() {
+            self.redo.push(std::mem::replace(&mut self.project, p));
+            self.after_history();
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if let Some(p) = self.redo.pop() {
+            self.undo.push(std::mem::replace(&mut self.project, p));
+            self.after_history();
+        }
+    }
+
+    fn after_history(&mut self) {
+        self.last_edit.clear();
+        self.editing = None;
+        if self.selected.is_some_and(|p| !self.exists(p)) {
+            self.selected = None;
+        }
+        if self.project.level(self.level).is_none() {
+            self.level = self.project.levels.last().map(|l| l.id).unwrap_or(0);
+        }
+        self.name_edit = TextEdit::new(self.project.name.clone());
+        self.touch();
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Scene and cameras
+
+    pub fn rebuild_scene(&mut self) {
+        self.scene = Arc::new(mesh::build(&self.project, &self.options));
+        self.scene_revision += 1;
+        self.stale = false;
+    }
+
+    pub fn scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    pub fn set_view(&mut self, view: ViewMode) {
+        self.view = view;
+        self.drag = DragOp::Idle;
+        self.cursor = None;
+        if view != ViewMode::Plan && self.stale {
+            self.rebuild_scene();
+        }
+        if view == ViewMode::Elevation {
+            self.aim_elevation(false);
+        }
+    }
+
+    pub fn set_options(&mut self, f: impl FnOnce(&mut BuildOptions)) {
+        f(&mut self.options);
+        self.rebuild_scene();
+    }
+
+    /// Points the elevation camera at the house from `self.side`. `refit` also resets its zoom.
+    pub fn aim_elevation(&mut self, refit: bool) {
+        let (lo, hi) = self.scene.bounds;
+        let center = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, (lo[2] + hi[2]) / 2.0];
+        let yaw = self.side.yaw();
+        let (sy, cy) = yaw.sin_cos();
+        // Half the house's depth along the view direction: where its near face is.
+        let half = ((hi[0] - lo[0]) * cy.abs() + (hi[1] - lo[1]) * sy.abs()) / 2.0;
+        let width = (hi[0] - lo[0]) * sy.abs() + (hi[1] - lo[1]) * cy.abs();
+        let c = &mut self.elevation;
+        c.yaw = yaw;
+        c.pitch = 0.0;
+        c.distance = half + 60.0;
+        if refit || !matches!(c.projection, Projection::Orthographic { .. }) {
+            c.target = center;
+            let aspect = (self.canvas[0] / self.canvas[1].max(1.0)).max(0.2);
+            let height = ((hi[2] - lo[2]) + 3.0).max((width + 4.0) / aspect).max(4.0);
+            c.projection = Projection::Orthographic { height };
+        }
+        c.cut = self.section.map(|depth| {
+            let front = cy * center[0] + sy * center[1] + half;
+            [-cy, -sy, 0.0, front - depth]
+        });
+    }
+
+    /// Centres and zooms the plan on the active level (or the whole building).
+    pub fn fit_plan(&mut self) {
+        let mut lo = [f32::MAX; 2];
+        let mut hi = [f32::MIN; 2];
+        let mut grow = |p: P2| {
+            lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+            hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+        };
+        for l in &self.project.levels {
+            l.walls.iter().for_each(|w| {
+                grow(w.a);
+                grow(w.b);
+            });
+            l.rooms.iter().flat_map(|r| &r.outline).for_each(|p| grow(*p));
+        }
+        if lo[0] > hi[0] {
+            lo = [-6.0, -4.0];
+            hi = [6.0, 4.0];
+        }
+        self.plan.center = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+        let zx = self.canvas[0] / (hi[0] - lo[0] + 5.0);
+        let zy = self.canvas[1] / (hi[1] - lo[1] + 5.0);
+        self.plan.zoom = zx.min(zy).clamp(8.0, 200.0);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Finding things
+
+    pub fn active(&self) -> Option<&Level> {
+        self.project.level(self.level)
+    }
+
+    pub fn exists(&self, pick: Pick) -> bool {
+        let p = &self.project;
+        match pick {
+            Pick::Wall(id) => p.levels.iter().any(|l| l.walls.iter().any(|w| w.id == id)),
+            Pick::Opening(w, o) => p.levels.iter().any(|l| l.walls.iter().any(|x| x.id == w && x.openings.iter().any(|y| y.id == o))),
+            Pick::Room(id) => p.levels.iter().any(|l| l.rooms.iter().any(|r| r.id == id)),
+            Pick::Stair(id) => p.levels.iter().any(|l| l.stairs.iter().any(|r| r.id == id)),
+            Pick::Fixture(id) => p.levels.iter().any(|l| l.fixtures.iter().any(|r| r.id == id)),
+            Pick::Furniture(id) => p.levels.iter().any(|l| l.furniture.iter().any(|r| r.id == id)),
+            Pick::Roof(id) => p.roofs.iter().any(|r| r.id == id),
+            Pick::Patch(id) => p.site.patches.iter().any(|r| r.id == id),
+        }
+    }
+
+    /// The level a pick lives on.
+    pub fn level_of(&self, pick: Pick) -> Option<Id> {
+        self.project.levels.iter().find(|l| match pick {
+            Pick::Wall(id) | Pick::Opening(id, _) => l.walls.iter().any(|w| w.id == id),
+            Pick::Room(id) => l.rooms.iter().any(|r| r.id == id),
+            Pick::Stair(id) => l.stairs.iter().any(|r| r.id == id),
+            Pick::Fixture(id) => l.fixtures.iter().any(|r| r.id == id),
+            Pick::Furniture(id) => l.furniture.iter().any(|r| r.id == id),
+            Pick::Roof(_) | Pick::Patch(_) => false,
+        }).map(|l| l.id)
+    }
+
+    pub fn select(&mut self, pick: Option<Pick>) {
+        if self.selected != pick {
+            self.commit_editing();
+            self.picker = None;
+        }
+        self.selected = pick;
+        self.settle();
+        if let Some(level) = pick.and_then(|p| self.level_of(p)) {
+            self.level = level;
+        }
+    }
+
+    pub fn set_tool(&mut self, tool: Tool) {
+        self.commit_editing();
+        self.tool = tool;
+        self.drag = DragOp::Idle;
+        if self.tool != Tool::Select {
+            self.selected = None;
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Typed values
+
+    pub fn begin_editing(&mut self, key: String, text: String, apply: Rc<dyn Fn(&mut State, &str)>) {
+        self.commit_editing();
+        let mut edit = TextEdit::new(text.clone());
+        edit.set_selection(0, text.len());
+        self.editing = Some(Editing { key, edit, apply });
+    }
+
+    pub fn commit_editing(&mut self) {
+        if let Some(e) = self.editing.take() {
+            let text = e.edit.text.clone();
+            (e.apply)(self, &text);
+            self.settle();
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Edits on the selection
+
+    pub fn delete_selected(&mut self) {
+        let Some(pick) = self.selected.take() else { return };
+        self.edit("", |p| {
+            for l in &mut p.levels {
+                match pick {
+                    Pick::Wall(id) => {
+                        l.walls.retain(|w| w.id != id);
+                        l.fixtures.retain(|f| !matches!(f.mount, Mount::Wall { wall, .. } if wall == id));
+                    }
+                    Pick::Opening(w, o) => l.walls.iter_mut().filter(|x| x.id == w).for_each(|x| x.openings.retain(|y| y.id != o)),
+                    Pick::Room(id) => l.rooms.retain(|r| r.id != id),
+                    Pick::Stair(id) => l.stairs.retain(|r| r.id != id),
+                    Pick::Fixture(id) => l.fixtures.retain(|r| r.id != id),
+                    Pick::Furniture(id) => l.furniture.retain(|r| r.id != id),
+                    Pick::Roof(_) | Pick::Patch(_) => {}
+                }
+            }
+            match pick {
+                Pick::Roof(id) => p.roofs.retain(|r| r.id != id),
+                Pick::Patch(id) => p.site.patches.retain(|r| r.id != id),
+                _ => {}
+            }
+        });
+    }
+
+    /// A copy of the selected furniture, fixture, opening or room, offset a little.
+    pub fn duplicate_selected(&mut self) {
+        let Some(pick) = self.selected else { return };
+        let mut made = None;
+        self.edit("", |p| {
+            let id = p.id();
+            for l in &mut p.levels {
+                match pick {
+                    Pick::Furniture(src) => {
+                        if let Some(f) = l.furniture.iter().find(|f| f.id == src).cloned() {
+                            l.furniture.push(Furniture { id, at: geom::add(f.at, [0.4, -0.4]), ..f });
+                            made = Some(Pick::Furniture(id));
+                        }
+                    }
+                    Pick::Fixture(src) => {
+                        if let Some(f) = l.fixtures.iter().find(|f| f.id == src).cloned() {
+                            let mount = match f.mount {
+                                Mount::Wall { wall, side, at, height } => Mount::Wall { wall, side, at: at + 0.4, height },
+                                Mount::Ceiling { at, turn } => Mount::Ceiling { at: geom::add(at, [0.5, 0.0]), turn },
+                                Mount::Floor { at, turn } => Mount::Floor { at: geom::add(at, [0.5, 0.0]), turn },
+                            };
+                            l.fixtures.push(Fixture { id, mount, ..f });
+                            made = Some(Pick::Fixture(id));
+                        }
+                    }
+                    Pick::Opening(w, src) => {
+                        if let Some(wall) = l.walls.iter_mut().find(|x| x.id == w) {
+                            if let Some(o) = wall.openings.iter().find(|o| o.id == src).cloned() {
+                                let at = (o.at + o.width + 0.3).min(wall.length() - o.width / 2.0);
+                                wall.openings.push(Opening { id, at, ..o });
+                                made = Some(Pick::Opening(w, id));
+                            }
+                        }
+                    }
+                    Pick::Room(src) => {
+                        if let Some(r) = l.rooms.iter().find(|r| r.id == src).cloned() {
+                            let outline = r.outline.iter().map(|p| geom::add(*p, [1.0, -1.0])).collect();
+                            l.rooms.push(Room { id, outline, name: format!("{} copy", r.name), ..r });
+                            made = Some(Pick::Room(id));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        });
+        if made.is_some() {
+            self.selected = made;
+        }
+    }
+
+    /// Turn the selected furniture, stair or ceiling fixture by `by` radians.
+    pub fn turn_selected(&mut self, by: f32) {
+        let Some(pick) = self.selected else { return };
+        self.edit("turn", |p| {
+            for l in &mut p.levels {
+                match pick {
+                    Pick::Furniture(id) => l.furniture.iter_mut().filter(|f| f.id == id).for_each(|f| f.turn = wrap(f.turn + by)),
+                    Pick::Stair(id) => l.stairs.iter_mut().filter(|f| f.id == id).for_each(|f| f.direction = wrap(f.direction + by)),
+                    Pick::Fixture(id) => l.fixtures.iter_mut().filter(|f| f.id == id).for_each(|f| {
+                        if let Mount::Ceiling { turn, .. } | Mount::Floor { turn, .. } = &mut f.mount {
+                            *turn = wrap(*turn + by);
+                        }
+                    }),
+                    _ => {}
+                }
+            }
+            if let Pick::Roof(id) = pick {
+                p.roofs.iter_mut().filter(|r| r.id == id).for_each(|r| r.turn = wrap(r.turn + by));
+            }
+        });
+    }
+
+    /// Move the selection by `d` metres.
+    pub fn nudge_selected(&mut self, d: P2) {
+        let Some(pick) = self.selected else { return };
+        self.checkpoint("nudge");
+        let before = self.project.clone();
+        translate(&mut self.project, &before, pick, d);
+        self.touch();
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Levels
+
+    /// Adds a level above the top one (or below the bottom one) and makes it active.
+    pub fn add_level(&mut self, above: bool) {
+        let mut made = 0;
+        self.edit("", |p| {
+            let id = p.id();
+            made = id;
+            let n = p.levels.len();
+            if above {
+                let (elevation, height) = p.levels.last().map(|l| (l.elevation + l.height + 0.3, l.height)).unwrap_or((0.0, 2.7));
+                p.levels.push(Level::new(id, &format!("Level {}", n + 1), elevation, height));
+            } else {
+                let elevation = p.levels.first().map(|l| l.elevation - l.slab - 2.5).unwrap_or(0.0);
+                p.levels.insert(0, Level::new(id, "Lower level", elevation, 2.5));
+            }
+        });
+        self.level = made;
+        self.selected = None;
+    }
+
+    pub fn remove_level(&mut self, id: Id) {
+        if self.project.levels.len() < 2 {
+            return;
+        }
+        self.edit("", |p| p.levels.retain(|l| l.id != id));
+        self.selected = None;
+        if self.project.level(self.level).is_none() {
+            self.level = self.project.levels.last().map(|l| l.id).unwrap_or(0);
+        }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Files
+
+    pub fn file_name(&self) -> String {
+        self.path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "unsaved".into())
+    }
+
+    pub fn save(&mut self) {
+        let path = self.path.clone().unwrap_or_else(|| {
+            let slug: String = self.project.name.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '-' }).collect();
+            PathBuf::from(format!("{}.lintel.json", slug.trim_matches('-')))
+        });
+        self.save_to(path);
+    }
+
+    pub fn save_to(&mut self, path: PathBuf) {
+        match crate::io::save(&self.project, &path) {
+            Ok(()) => {
+                self.status = format!("Saved {}", path.display());
+                self.path = Some(path);
+                self.dirty = false;
+            }
+            Err(e) => self.status = format!("Couldn't save {}: {e}", path.display()),
+        }
+    }
+
+    pub fn open(&mut self, path: PathBuf) {
+        match crate::io::load(&path) {
+            Ok(project) => self.replace_project(project, Some(path)),
+            Err(e) => self.status = format!("Couldn't open {}: {e}", path.display()),
+        }
+    }
+
+    /// Swap in another project, keeping window state (theme, view).
+    pub fn replace_project(&mut self, project: Project, path: Option<PathBuf>) {
+        let (view, dark, canvas) = (self.view, self.dark, self.canvas);
+        let status = path.as_ref().map(|p| format!("Opened {}", p.display())).unwrap_or_default();
+        let mut next = State::new(project, path);
+        next.dark = dark;
+        next.canvas = canvas;
+        next.fit_plan();
+        next.set_view(view);
+        next.aim_elevation(true);
+        next.status = status;
+        *self = next;
+    }
+}
+
+fn wrap(a: f32) -> f32 {
+    let t = std::f32::consts::TAU;
+    let a = a % t;
+    if a > std::f32::consts::PI {
+        a - t
+    } else if a < -std::f32::consts::PI {
+        a + t
+    } else {
+        a
+    }
+}
+
+/// Sets `pick`'s position in `project` to where it was in `before`, moved by `d`.
+pub fn translate(project: &mut Project, before: &Project, pick: Pick, d: P2) {
+    let mv = |p: P2| geom::add(p, d);
+    match pick {
+        Pick::Roof(id) => {
+            if let (Some(r), Some(o)) = (project.roofs.iter_mut().find(|r| r.id == id), before.roofs.iter().find(|r| r.id == id)) {
+                r.center = mv(o.center);
+            }
+        }
+        Pick::Patch(id) => {
+            if let (Some(r), Some(o)) = (project.site.patches.iter_mut().find(|r| r.id == id), before.site.patches.iter().find(|r| r.id == id)) {
+                r.outline = o.outline.iter().map(|p| mv(*p)).collect();
+            }
+        }
+        _ => {}
+    }
+    for (l, lo) in project.levels.iter_mut().zip(&before.levels) {
+        match pick {
+            Pick::Wall(id) => {
+                let Some(o) = lo.walls.iter().find(|w| w.id == id) else { continue };
+                // Walls that met this one's ends follow, so corners stay closed.
+                let ends = [o.a, o.b];
+                for (w, wo) in l.walls.iter_mut().zip(&lo.walls) {
+                    if wo.id == id {
+                        w.a = mv(wo.a);
+                        w.b = mv(wo.b);
+                        continue;
+                    }
+                    if ends.iter().any(|e| geom::dist(*e, wo.a) < 0.02) {
+                        w.a = mv(wo.a);
+                    }
+                    if ends.iter().any(|e| geom::dist(*e, wo.b) < 0.02) {
+                        w.b = mv(wo.b);
+                    }
+                }
+            }
+            Pick::Room(id) => {
+                if let (Some(r), Some(o)) = (l.rooms.iter_mut().find(|r| r.id == id), lo.rooms.iter().find(|r| r.id == id)) {
+                    r.outline = o.outline.iter().map(|p| mv(*p)).collect();
+                }
+            }
+            Pick::Stair(id) => {
+                if let (Some(r), Some(o)) = (l.stairs.iter_mut().find(|r| r.id == id), lo.stairs.iter().find(|r| r.id == id)) {
+                    r.at = mv(o.at);
+                }
+            }
+            Pick::Furniture(id) => {
+                if let (Some(r), Some(o)) = (l.furniture.iter_mut().find(|r| r.id == id), lo.furniture.iter().find(|r| r.id == id)) {
+                    r.at = mv(o.at);
+                }
+            }
+            Pick::Fixture(id) => {
+                if let (Some(r), Some(o)) = (l.fixtures.iter_mut().find(|r| r.id == id), lo.fixtures.iter().find(|r| r.id == id)) {
+                    r.mount = match o.mount {
+                        Mount::Ceiling { at, turn } => Mount::Ceiling { at: mv(at), turn },
+                        Mount::Floor { at, turn } => Mount::Floor { at: mv(at), turn },
+                        wall => wall,
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Host for State {
+    fn viewport(&self) -> Option<Viewport> {
+        let camera = match self.view {
+            ViewMode::Plan => return None,
+            ViewMode::Elevation => self.elevation,
+            ViewMode::Model => self.camera,
+        };
+        Some(Viewport { scene: self.scene.clone(), revision: self.scene_revision, camera, sun: self.sun, selected: self.selected, hovered: self.hovered })
+    }
+}
