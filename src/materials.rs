@@ -62,6 +62,8 @@ pub enum Pattern {
     Soil = 17,
     /// Horizontal ribs: a roller door curtain, corrugated sheet.
     Ribbed = 18,
+    /// Exactly its colour, unlit: overlays such as the light-level map.
+    Flat = 19,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

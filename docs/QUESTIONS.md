@@ -57,9 +57,10 @@ Answered ones move to the bottom with the decision.
 21. **Phone capture.** A companion iOS app (RoomPlan gives walls, doors and windows from
     LiDAR) is a separate project. Is importing a scan file made by an existing app enough to
     start with?
-22. **Light accuracy.** For real light levels I need lamp data. Lumens and colour temperature
-    typed per fitting, or manufacturer photometric files (IES)? Is a calculated lux map on
-    floors and benches the output you want?
+22. **Light accuracy.** Built with what you type per fitting (lumens, colour temperature,
+    source) and a clear-sky sun; it gives a lux map and a figure per room. Do you need
+    manufacturer photometric files (IES) for real beam shapes, overcast skies, or targets per
+    room ("the kitchen bench should reach 500 lux") that the app checks?
 
 ## Answered
 

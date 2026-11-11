@@ -350,6 +350,12 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
             }
         }));
     }
+    if let Some(lit) = s.lux.levels.as_ref().and_then(|l| l.rooms.iter().find(|x| x.room == id)) {
+        v.push(section(th, "Light"));
+        v.push(fact(th, "Average", format!("{} lux", round_lux(lit.mean))));
+        v.push(fact(th, "Range", format!("{} to {} lux", round_lux(lit.min), round_lux(lit.max))));
+        v.push(text(format!("{}{}", crate::lux::describe(lit.mean), if s.lux.stale { " (calculated before the last change)" } else { "" })).font(SMALL).color(th.dim).wrap());
+    }
     v.push(text("Drag a corner to reshape. Double-click an edge to add a corner; drop a corner on its neighbour to remove it.").font(SMALL).color(th.dim).wrap().mt(8.0));
     v.push(actions(th, true, false));
     v
@@ -666,6 +672,58 @@ fn sun_rows(s: &State, th: &Th) -> Vec<El> {
     v
 }
 
+fn light_rows(s: &State, th: &Th) -> Vec<El> {
+    let lux = &s.lux;
+    let busy = lux.request.is_pending();
+    let mut v = vec![
+        section(th, "Light levels"),
+        text("Lux on a level plane in every room, from the sun, the sky and the lamps that are on, with shadows and bounced light.").font(SMALL).color(th.dim).wrap(),
+        num(s, th, "Measured at", "lux-height", lux.settings.height, Fmt::Length, 0.05, |s: &mut State, x| s.lux.settings.height = x.clamp(0.01, 2.5)),
+        row()
+            .w_full()
+            .gap(6.0)
+            .mt(2.0)
+            .flex_wrap()
+            .child(button(th, "lux-calculate", if busy { "Calculating…" } else if lux.levels.is_some() { "Recalculate" } else { "Calculate" }, false).on_press(|s: &mut State| s.calculate_light()))
+            .child(button(th, "lux-show", if lux.show { "Hide the map" } else { "Show the map" }, lux.show).on_press(|s: &mut State| {
+                let show = !s.lux.show;
+                s.show_light(show)
+            })),
+    ];
+    let Some(levels) = &lux.levels else { return v };
+    if lux.stale {
+        v.push(text("The house has changed since this was calculated.").font(SMALL).color(crate::plan::hex(0xc9772b)).wrap());
+    }
+    // The scale.
+    let stops = [1.0f32, 10.0, 100.0, 1000.0, 10_000.0];
+    v.push(row().w_full().gap(2.0).mt(4.0).children(stops.iter().map(|x| {
+        col().grow(1.0).gap(2.0).child(rune::el().w_full().h(8.0).radius(2.0).fill(crate::plan::srgb(crate::lux::color(*x)))).child(text(round_lux(*x)).font(SMALL).color(th.dim))
+    })));
+    v.push(fact(th, "Outside", if levels.sun > 0.0 { format!("sun {} lux, sky {} lux", round_lux(levels.sun), round_lux(levels.sky)) } else { "night".to_string() }));
+    v.push(fact(th, "Lamps on", format!("{}", s.scene_lamps())));
+    for level in s.project.levels.iter().rev() {
+        for room in levels.rooms.iter().filter(|r| r.level == level.id) {
+            let id = room.room;
+            v.push(
+                row()
+                    .key(format!("lux-room-{id}"))
+                    .w_full()
+                    .min_h(24.0)
+                    .gap(8.0)
+                    .px(4.0)
+                    .radius(5.0)
+                    .center_y()
+                    .hover(th.hover)
+                    .on_press(move |s: &mut State| s.select(Some(Pick::Room(id))))
+                    .child(rune::el().size(10.0, 10.0).radius(2.0).fill(crate::plan::srgb(crate::lux::color(room.mean))))
+                    .child(text(room.name.clone()).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
+                    .child(text(format!("{} lux", round_lux(room.mean))).font(VALUE).color(th.text)),
+            );
+        }
+    }
+    v
+}
+
 fn furniture(s: &State, th: &Th, lib: &Library, f: &Furniture) -> Vec<El> {
     let id = f.id;
     let kind = crate::catalog::piece(&f.kind).map(|p| p.name.to_string()).unwrap_or_else(|| f.kind.clone());
@@ -938,6 +996,7 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
     let (lo, hi) = t.heights.iter().fold((f32::MAX, f32::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
     let size = t.size();
     v.extend(sun_rows(s, th));
+    v.extend(light_rows(s, th));
 
     v.push(section(th, "Site & ground"));
     v.push(text(t.source.clone()).font(SMALL).color(th.dim).wrap());

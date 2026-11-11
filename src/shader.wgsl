@@ -443,7 +443,10 @@ fn fs(i: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 
     var out: vec3f;
     var alpha = m.alpha;
-    if m.emissive > 0.5 {
+    if pattern == 19 {
+        out = i.color.rgb;
+        alpha = i.color.a;
+    } else if m.emissive > 0.5 {
         out = m.albedo * 1.6 + vec3f(0.25);
         out = tonemap(out * 1.7);
     } else if cutting && !front {

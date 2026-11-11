@@ -11,6 +11,7 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 | ![Plan](docs/plan.png) | ![Section through the house](docs/section.png) |
 | ![The walk-out basement from the garden](docs/back.png) | ![Picking a floor material and stain](docs/room.png) |
 | ![A December night, lit by its lamps](docs/night.png) | ![The garage door half open](docs/garage.png) |
+| ![Calculated light levels on the plan](docs/lux.png) | ![The same map in 3D](docs/lux-3d.png) |
 
 ## What it models
 
@@ -37,6 +38,18 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
   service by latitude and longitude, plus draped surfaces (driveway, paths, patio).
 - **Materials**: about 55 procedural surfaces. Paints take any colour, timbers keep their own
   colour and take a stain, and stone, brick and concrete are the colour they are.
+
+## Light levels
+
+**Light levels → Calculate** works out the illuminance in lux on a level plane in every room
+(0.8 m up by default): sunlight and skylight through the windows, the lamps that are on,
+shadows, and light bounced off walls, floors and ceilings. The map shows on the plan and in
+3D, each room gets an average, and the status line reads the level under the pointer.
+
+It is a planning estimate, not a photometric report. Fittings are ideal points with a simple
+beam shape (no IES files), the sky is clear and uniform, glass passes 80 %, and surfaces
+reflect diffusely by their colour. The tests check it against the inverse-square law, the
+daylight on open ground, and the energy balance of bounced light in a closed room.
 
 ## Download
 
@@ -103,7 +116,8 @@ target/release/lintel --snap out.png --scene dollhouse --size 1440x900
 | `plan.rs`, `edit.rs` | The plan drawing, and pointer editing on it |
 | `ui.rs`, `inspector.rs`, `widgets.rs` | The window |
 | `app.rs` | Editor state, undo, files |
-| `geo.rs` | Elevation services |
+| `geo.rs`, `solar.rs` | Elevation services; where the sun is |
+| `lux.rs` | Light levels: a small path tracer |
 
 ## In a browser (experimental)
 

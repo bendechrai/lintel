@@ -28,12 +28,14 @@ fn init() -> State {
 }
 
 fn setup(s: &mut State, waker: rune::runtime::Waker) {
-    s.geo.request.set_waker(waker);
+    s.geo.request.set_waker(waker.clone());
+    s.lux.request.set_waker(waker);
 }
 
 /// Lands a fetched terrain.
 fn poll(s: &mut State, _: f64, _: &mut Tx) -> bool {
-    let Some(answer) = s.geo.request.take() else { return false };
+    let lit = s.land_light();
+    let Some(answer) = s.geo.request.take() else { return lit };
     match answer {
         Ok(fetched) => {
             let note = fetched.terrain.source.clone();
@@ -127,6 +129,25 @@ const SCENES: &[(&str, fn(&mut State))] = &[
     }),
     ("switch", |s| {
         s.selected = first_of(s, |l| l.fixtures.iter().find(|f| f.label == "Living room lights").map(|f| Pick::Fixture(f.id)));
+    }),
+    ("lux", |s| {
+        s.lux.levels = Some(crate::lux::compute(&s.project, &s.lux.settings));
+        s.lux.show = true;
+    }),
+    ("lux-night", |s| {
+        s.edit("", |p| p.site.sun = crate::model::SunSetting { altitude: -10.0, ..p.site.sun });
+        s.lux.levels = Some(crate::lux::compute(&s.project, &s.lux.settings));
+        s.lux.show = true;
+        s.selected = first_of(s, |l| l.rooms.iter().find(|r| r.name == "Living room").map(|r| Pick::Room(r.id)));
+    }),
+    ("lux-3d", |s| {
+        s.lux.levels = Some(crate::lux::compute(&s.project, &s.lux.settings));
+        s.lux.show = true;
+        s.set_view(ViewMode::Model);
+        let main = s.project.levels.last().map(|l| l.id);
+        s.set_options(|o| o.top_level = main);
+        s.camera.pitch = 0.95;
+        s.camera.distance *= 0.8;
     }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];

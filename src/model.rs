@@ -137,6 +137,18 @@ impl Default for SunSetting {
 }
 
 impl Site {
+    /// The unit vector toward the sun in the plan's axes, and its height in radians.
+    pub fn sun_direction(&self) -> ([f32; 3], f32) {
+        let (bearing, height) = self.sun_position();
+        // Compass bearings run clockwise from north; the plan's +Y points `north` degrees
+        // round from true north.
+        let (e, n) = bearing.to_radians().sin_cos();
+        let (sb, cb) = self.north.to_radians().sin_cos();
+        let (x, y) = (e * cb - n * sb, e * sb + n * cb);
+        let alt = height.to_radians();
+        ([x * alt.cos(), y * alt.cos(), alt.sin()], alt)
+    }
+
     /// The sun's compass bearing and height in degrees, as the setting gives them.
     pub fn sun_position(&self) -> (f32, f32) {
         if self.sun.by_clock {

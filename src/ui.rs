@@ -169,6 +169,7 @@ fn options_bar(s: &State, th: &Th) -> El {
                 .child(ghost(th, "show-fixtures", "Fixtures", s.show_fixtures).on_press(|s: &mut State| s.show_fixtures = !s.show_fixtures))
                 .child(ghost(th, "show-below", "Level below", s.show_below).on_press(|s: &mut State| s.show_below = !s.show_below))
                 .child(ghost(th, "show-roofs", "Roofs", s.show_roofs).on_press(|s: &mut State| s.show_roofs = !s.show_roofs))
+                .child(ghost(th, "show-lux", "Light levels", s.lux.show).on_press(|s: &mut State| if s.lux.levels.is_none() { s.calculate_light() } else { s.show_light(!s.lux.show) }))
                 .child(spacer())
                 .child(ghost(th, "fit", "Fit", false).on_press(|s: &mut State| {
                     s.plan_moved = false;
@@ -208,6 +209,7 @@ fn options_bar(s: &State, th: &Th) -> El {
                 .child(ghost(th, "opt-furniture", "Furniture", o.furniture).on_press(|s: &mut State| s.set_options(|o| o.furniture = !o.furniture)))
                 .child(ghost(th, "opt-fixtures", "Fixtures", o.fixtures).on_press(|s: &mut State| s.set_options(|o| o.fixtures = !o.fixtures)))
                 .child(ghost(th, "opt-terrain", "Ground", o.terrain).on_press(|s: &mut State| s.set_options(|o| o.terrain = !o.terrain)))
+                .child(ghost(th, "show-lux", "Light levels", s.lux.show).on_press(|s: &mut State| if s.lux.levels.is_none() { s.calculate_light() } else { s.show_light(!s.lux.show) }))
                 .child(label("Open up to"))
                 .child(ghost(th, "top-all", "Whole house", o.top_level.is_none()).on_press(|s: &mut State| s.set_options(|o| o.top_level = None)));
             for l in &s.project.levels {
@@ -474,6 +476,9 @@ fn status_bar(s: &State, th: &Th) -> El {
     if s.view == ViewMode::Plan {
         if let Some(c) = s.cursor {
             bar = bar.child(text(format!("{}, {}", units::length(c[0], u), units::length(c[1], u))).font(SMALL).color(th.dim));
+            if let Some(v) = s.lux.levels.as_ref().filter(|_| s.lux.show).and_then(|l| l.rooms.iter().filter(|r| r.level == s.level).find_map(|r| r.at(c))) {
+                bar = bar.child(text(format!("{} lux · {}", round_lux(v), crate::lux::describe(v))).font(SMALL).color(th.text));
+            }
             let ground = s.project.site.terrain.height(c);
             bar = bar.child(text(format!("ground {}", units::length(ground, u))).font(SMALL).color(th.dim));
         }

@@ -650,11 +650,31 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
         let c = geom::centroid(&r.outline);
         let _ = selected;
         d.label(add(c, [0.0, d.px(8.0)]), r.name.clone(), NAME, ink.text);
-        d.label(add(c, [0.0, -d.px(8.0)]), units::area(geom::area(&r.outline).abs(), d.units), SMALL, ink.faint);
+        match s.lux.levels.as_ref().filter(|_| s.lux.show).and_then(|l| l.rooms.iter().find(|x| x.room == r.id)) {
+            Some(lit) => d.label(add(c, [0.0, -d.px(8.0)]), format!("{} lux", crate::widgets::round_lux(lit.mean)), SMALL, ink.text),
+            None => d.label(add(c, [0.0, -d.px(8.0)]), units::area(geom::area(&r.outline).abs(), d.units), SMALL, ink.faint),
+        }
     }
 
     for st in &level.stairs {
         draw_stair(&mut d, st, s.selected == Some(Pick::Stair(st.id)));
+    }
+
+    // The light-level map lies over the floors, under what stands on them.
+    let lux = s.lux.levels.as_ref().filter(|_| s.lux.show);
+    if let Some(levels) = lux {
+        for room in levels.rooms.iter().filter(|r| r.level == level.id) {
+            let h = room.spacing / 2.0;
+            for r in 0..room.rows {
+                for c in 0..room.cols {
+                    let v = room.lux[r * room.cols + c];
+                    if v.is_finite() {
+                        let (x, y) = (room.origin[0] + c as f32 * room.spacing, room.origin[1] + r as f32 * room.spacing);
+                        d.fill(&[[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h]], srgb(crate::lux::color(v)).alpha(if s.lux.stale { 0.45 } else { 0.9 }));
+                    }
+                }
+            }
+        }
     }
     // Stairs arriving from the level below show where the floor opens.
     if index > 0 {

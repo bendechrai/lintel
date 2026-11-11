@@ -95,6 +95,17 @@ pub fn on_project<T: 'static>(tag: &'static str, f: impl Fn(&mut Project, T) + '
     move |s: &mut State, v: T| s.edit(tag, |p| f(p, v))
 }
 
+/// A light level to two significant figures, the precision the calculation deserves.
+pub fn round_lux(v: f32) -> String {
+    if v < 10.0 {
+        format!("{:.1}", v)
+    } else {
+        let k = 10f32.powf(v.log10().floor() - 1.0);
+        let r = (v / k).round() * k;
+        if r >= 10_000.0 { format!("{:.0} 000", r / 1000.0) } else { format!("{r:.0}") }
+    }
+}
+
 pub fn section(th: &Th, title: &str) -> El {
     text(title.to_uppercase()).font(HEAD.tracking(0.5)).color(th.dim).mt(10.0).mb(2.0)
 }

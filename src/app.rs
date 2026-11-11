@@ -141,6 +141,16 @@ pub struct GeoForm {
     pub request: rune::Latest<Result<crate::geo::Fetched, String>>,
 }
 
+/// Calculated light levels and how they are shown.
+pub struct LuxView {
+    pub settings: crate::lux::Settings,
+    pub request: rune::Latest<crate::lux::Levels>,
+    pub levels: Option<crate::lux::Levels>,
+    /// True when the project changed after `levels` was calculated.
+    pub stale: bool,
+    pub show: bool,
+}
+
 pub struct State {
     pub project: Project,
     pub path: Option<PathBuf>,
@@ -181,6 +191,7 @@ pub struct State {
     pub slope: (f32, f32),
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
+    pub lux: LuxView,
     /// The switch whose lights are being picked on the plan.
     pub linking: Option<Id>,
     /// Pointer travel at the last event of a viewport drag.
@@ -246,6 +257,7 @@ impl State {
             open_groups: vec!["Living".into()],
             drag_last: [0.0, 0.0],
             linking: None,
+            lux: LuxView { settings: crate::lux::Settings::default(), request: rune::Latest::default(), levels: None, stale: false, show: false },
             camera: Camera::default(),
             side: Side::South,
             elevation: Camera::default(),
@@ -294,6 +306,7 @@ impl State {
     pub fn touch(&mut self) {
         self.dirty = true;
         self.stale = true;
+        self.lux.stale = self.lux.levels.is_some();
         if self.view != ViewMode::Plan {
             self.rebuild_scene();
         }
@@ -357,22 +370,74 @@ impl State {
     // -----------------------------------------------------------------------------------------
     // Scene and cameras
 
+    /// Starts calculating light levels for the project as it stands.
+    pub fn calculate_light(&mut self) {
+        self.commit_editing();
+        let (project, settings) = (self.project.clone(), self.lux.settings);
+        self.lux.request.request((project, settings), |(project, settings)| crate::lux::compute(&project, &settings));
+        self.lux.show = true;
+    }
+
+    /// Takes a finished light calculation, if one has landed.
+    pub fn land_light(&mut self) -> bool {
+        let Some(levels) = self.lux.request.take() else { return false };
+        self.status = format!("Light levels calculated in {:.1} s.", levels.seconds);
+        self.lux.levels = Some(levels);
+        self.lux.stale = false;
+        if self.view != ViewMode::Plan {
+            self.rebuild_scene();
+        }
+        true
+    }
+
+    /// How many point sources the lamps that are on amount to.
+    pub fn scene_lamps(&self) -> usize {
+        self.project.levels.iter().flat_map(|l| &l.fixtures).filter(|f| f.output() > 0.0).count()
+    }
+
+    pub fn show_light(&mut self, show: bool) {
+        self.lux.show = show;
+        if self.view != ViewMode::Plan {
+            self.rebuild_scene();
+        }
+    }
+
+    /// The light-level map as coloured tiles on each room's measuring plane.
+    fn light_tiles(&self, scene: &mut Scene) {
+        let Some(levels) = self.lux.levels.as_ref().filter(|_| self.lux.show) else { return };
+        let top = self.options.top_level.and_then(|id| self.project.levels.iter().position(|l| l.id == id));
+        for room in &levels.rooms {
+            let index = self.project.levels.iter().position(|l| l.id == room.level);
+            if index.is_none() || top.is_some_and(|t| index.is_some_and(|i| i > t)) {
+                continue;
+            }
+            let h = room.spacing / 2.0;
+            for r in 0..room.rows {
+                for c in 0..room.cols {
+                    let v = room.lux[r * room.cols + c];
+                    if !v.is_finite() {
+                        continue;
+                    }
+                    let (x, y) = (room.origin[0] + c as f32 * room.spacing, room.origin[1] + r as f32 * room.spacing);
+                    let surface = crate::materials::Surface { pattern: crate::materials::Pattern::Flat, color: crate::materials::linear(crate::lux::color(v)), scale: 0.0, roughness: 1.0, opacity: 0.82 };
+                    scene.quad([[x - h, y - h, room.z], [x + h, y - h, room.z], [x + h, y + h, room.z], [x - h, y + h, room.z]], [0.0, 0.0], &surface, 0.0);
+                }
+            }
+        }
+    }
+
     pub fn rebuild_scene(&mut self) {
-        self.scene = Arc::new(mesh::build(&self.project, &self.options));
+        let mut scene = mesh::build(&self.project, &self.options);
+        self.light_tiles(&mut scene);
+        self.scene = Arc::new(scene);
         self.scene_revision += 1;
         self.stale = false;
     }
 
     /// The sun as the renderer wants it: its bearing turned into the plan's axes.
     pub fn sun(&self) -> Sun {
-        let site = &self.project.site;
-        let (bearing, height) = site.sun_position();
-        // Compass bearings run clockwise from north; the plan's +Y points `north` degrees
-        // round from true north.
-        let (e, n) = ((bearing).to_radians().sin(), (bearing).to_radians().cos());
-        let (sb, cb) = site.north.to_radians().sin_cos();
-        let (x, y) = (e * cb - n * sb, e * sb + n * cb);
-        Sun { azimuth: y.atan2(x), altitude: height.to_radians() }
+        let (d, altitude) = self.project.site.sun_direction();
+        Sun { azimuth: d[1].atan2(d[0]), altitude }
     }
 
     pub fn scene(&self) -> &Scene {
