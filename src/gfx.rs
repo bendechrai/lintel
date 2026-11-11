@@ -76,6 +76,26 @@ struct Globals {
     up: [f32; 4],
     fwd: [f32; 4],
     sel: [f32; 4],
+    /// x sun strength 0..1, y sky strength 0..1, z number of lamps.
+    light: [f32; 4],
+    lamps: [GpuLamp; MAX_LAMPS],
+}
+
+const MAX_LAMPS: usize = 64;
+
+/// Illuminance in lux that draws as a fully lit surface.
+const LUX_WHITE: f32 = 150.0;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GpuLamp {
+    /// xyz position, w spread.
+    pos: [f32; 4],
+    axis: [f32; 4],
+    /// Colour times lumens, in display units.
+    color: [f32; 4],
+    lo: [f32; 4],
+    hi: [f32; 4],
 }
 
 #[repr(C)]
@@ -407,7 +427,23 @@ fn light_matrix(sun: [f32; 3], bounds: ([f32; 3], [f32; 3])) -> ([[f32; 4]; 4], 
 fn globals(view: &Viewport, aspect: f32) -> Globals {
     let cam = &view.camera;
     let b = cam.basis();
-    let sun = view.sun.direction();
+    // Below the horizon the sun gives nothing; keep its direction sane for the shadow map.
+    let alt = view.sun.altitude.to_degrees();
+    let step = |lo: f32, hi: f32| ((alt - lo) / (hi - lo)).clamp(0.0, 1.0);
+    let (sun_strength, sky_strength) = (step(-0.5, 8.0), step(-8.0, 6.0));
+    let sun = Sun { altitude: view.sun.altitude.max(3f32.to_radians()), ..view.sun }.direction();
+    let mut lamps = [GpuLamp::zeroed(); MAX_LAMPS];
+    let count = view.scene.lamps.len().min(MAX_LAMPS);
+    for (slot, l) in lamps.iter_mut().zip(&view.scene.lamps) {
+        let k = l.lumens / LUX_WHITE;
+        *slot = GpuLamp {
+            pos: [l.pos[0], l.pos[1], l.pos[2], l.spread],
+            axis: [l.axis[0], l.axis[1], l.axis[2], 0.0],
+            color: [l.color[0] * k, l.color[1] * k, l.color[2] * k, 0.0],
+            lo: [l.room.0[0], l.room.0[1], l.room.0[2], 0.0],
+            hi: [l.room.1[0], l.room.1[1], l.room.1[2], 0.0],
+        };
+    }
     let (light_vp, texel) = light_matrix(sun, shadow_bounds(&view.scene));
     let (ortho, t) = match cam.projection {
         Projection::Perspective { fov_y } => (0.0, (fov_y * 0.5).tan()),
@@ -426,6 +462,8 @@ fn globals(view: &Viewport, aspect: f32) -> Globals {
         up: v4(mul(b.up, t), 0.0),
         fwd: v4(b.forward, 0.0),
         sel: [pick(view.selected), pick(view.hovered), 0.0, 0.0],
+        light: [sun_strength, sky_strength, count as f32, 0.0],
+        lamps,
     }
 }
 

@@ -18,9 +18,9 @@ Answered ones move to the bottom with the decision.
 
 ## Lighting
 
-5. **Sun.** Both modes are planned: set azimuth and altitude by hand, or derive them from
-   latitude, longitude, date and time. Do you want a time-of-day scrubber and a
-   "shortest day / longest day" shortcut?
+5. **Sun.** Built: by hand, or from latitude, longitude, date and time, with shortcuts for
+   the solstices and equinoxes. The clock is a UTC offset you set; should it know time zones
+   and daylight saving from the location instead?
 6. **Lamps.** Which sources matter: bulbs by wattage or lumens, colour temperature, dimming,
    LED strip by lumens per metre in a diffuser channel? Do you want real photometric numbers
    (lux on a bench) or only a believable picture?

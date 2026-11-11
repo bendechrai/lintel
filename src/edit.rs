@@ -32,7 +32,7 @@ pub fn hit(s: &State, p: P2, slop: f32) -> Option<Pick> {
             let Some((at, facing)) = fixture_point(level, f) else { continue };
             let on_wall = matches!(f.mount, Mount::Wall { .. });
             let reach = match f.kind {
-                FixtureKind::TubeLight { length, .. } => length / 2.0,
+                FixtureKind::TubeLight { length, .. } | FixtureKind::Strip { length } => length / 2.0,
                 FixtureKind::Vent { width, .. } => width / 2.0,
                 FixtureKind::Pendant { diameter, .. } | FixtureKind::Surface { diameter } => diameter / 2.0,
                 _ => 0.0,
@@ -218,6 +218,8 @@ fn default_mount(level: &Level, kind: FixtureKind, p: P2) -> Option<Mount> {
         FixtureKind::Vent { .. } => on_wall(0.35).or(Some(Mount::Ceiling { at: p, turn: 0.0 })),
         FixtureKind::Surface { .. } => Some(Mount::Ceiling { at: p, turn: 0.0 }),
         FixtureKind::SmokeDetector | FixtureKind::Downlight { .. } | FixtureKind::TubeLight { .. } | FixtureKind::Pendant { .. } => Some(Mount::Ceiling { at: p, turn: 0.0 }),
+        // A strip goes along a wall near its top when the click is by one, else on the ceiling.
+        FixtureKind::Strip { .. } => on_wall(2.2).or(Some(Mount::Ceiling { at: p, turn: 0.0 })),
     }
 }
 
@@ -268,7 +270,7 @@ fn place(s: &mut State, p: P2) {
             s.checkpoint("");
             let id = s.project.id();
             if let Some(l) = level_mut(s) {
-                l.fixtures.push(Fixture { id, kind: *kind, mount, label: String::new() });
+                l.fixtures.push(Fixture::new(id, *kind, mount));
             }
             s.touch();
             // Stay in the tool: fixtures usually go in several at a time.
@@ -457,7 +459,22 @@ pub fn plan_drag(s: &mut State, d: &mut Drag, tx: &mut Tx) {
                             s.forget_checkpoint();
                         }
                     }
-                    match hit(s, raw, slop) {
+                    let under = hit(s, raw, slop);
+                    // Picking lights for a switch: a click on a light links or unlinks it.
+                    if let (Some(switch), Some(Pick::Fixture(light))) = (s.linking, under) {
+                        if light != switch {
+                            s.link(switch, light);
+                            return;
+                        }
+                    }
+                    // A double click on a switch flicks it.
+                    if let (2, Some(Pick::Fixture(id))) = (d.clicks, under) {
+                        if s.project.fixture(id).is_some_and(|f| matches!(f.kind, FixtureKind::Switch { .. })) {
+                            s.flick(id);
+                            return;
+                        }
+                    }
+                    match under {
                         Some(pick) => {
                             s.select(Some(pick));
                             s.checkpoint("");

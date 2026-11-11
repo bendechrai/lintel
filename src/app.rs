@@ -181,6 +181,8 @@ pub struct State {
     pub slope: (f32, f32),
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
+    /// The switch whose lights are being picked on the plan.
+    pub linking: Option<Id>,
     /// Pointer travel at the last event of a viewport drag.
     pub drag_last: [f32; 2],
 
@@ -189,7 +191,6 @@ pub struct State {
     pub elevation: Camera,
     /// Distance of the section plane behind the front of the house, when cutting.
     pub section: Option<f32>,
-    pub sun: Sun,
     pub options: BuildOptions,
     scene: Arc<Scene>,
     scene_revision: u64,
@@ -244,11 +245,11 @@ impl State {
             slope: (90.0, 0.1),
             open_groups: vec!["Living".into()],
             drag_last: [0.0, 0.0],
+            linking: None,
             camera: Camera::default(),
             side: Side::South,
             elevation: Camera::default(),
             section: None,
-            sun: Sun::default(),
             options: BuildOptions::default(),
             scene: Arc::new(Scene::default()),
             scene_revision: 0,
@@ -362,6 +363,18 @@ impl State {
         self.stale = false;
     }
 
+    /// The sun as the renderer wants it: its bearing turned into the plan's axes.
+    pub fn sun(&self) -> Sun {
+        let site = &self.project.site;
+        let (bearing, height) = site.sun_position();
+        // Compass bearings run clockwise from north; the plan's +Y points `north` degrees
+        // round from true north.
+        let (e, n) = ((bearing).to_radians().sin(), (bearing).to_radians().cos());
+        let (sb, cb) = site.north.to_radians().sin_cos();
+        let (x, y) = (e * cb - n * sb, e * sb + n * cb);
+        Sun { azimuth: y.atan2(x), altitude: height.to_radians() }
+    }
+
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
@@ -470,6 +483,7 @@ impl State {
         if self.selected != pick {
             self.commit_editing();
             self.picker = None;
+            self.linking = None;
         }
         self.selected = pick;
         self.settle();
@@ -520,7 +534,10 @@ impl State {
                     Pick::Opening(w, o) => l.walls.iter_mut().filter(|x| x.id == w).for_each(|x| x.openings.retain(|y| y.id != o)),
                     Pick::Room(id) => l.rooms.retain(|r| r.id != id),
                     Pick::Stair(id) => l.stairs.retain(|r| r.id != id),
-                    Pick::Fixture(id) => l.fixtures.retain(|r| r.id != id),
+                    Pick::Fixture(id) => {
+                        l.fixtures.retain(|r| r.id != id);
+                        l.fixtures.iter_mut().for_each(|f| f.controls.retain(|c| *c != id));
+                    }
                     Pick::Furniture(id) => l.furniture.retain(|r| r.id != id),
                     Pick::Roof(_) | Pick::Patch(_) => {}
                 }
@@ -554,7 +571,7 @@ impl State {
                                 Mount::Ceiling { at, turn } => Mount::Ceiling { at: geom::add(at, [0.5, 0.0]), turn },
                                 Mount::Floor { at, turn } => Mount::Floor { at: geom::add(at, [0.5, 0.0]), turn },
                             };
-                            l.fixtures.push(Fixture { id, mount, ..f });
+                            l.fixtures.push(Fixture { id, mount, controls: vec![], ..f });
                             made = Some(Pick::Fixture(id));
                         }
                     }
@@ -581,6 +598,38 @@ impl State {
         if made.is_some() {
             self.selected = made;
         }
+    }
+
+    /// Flicks a switch: its lights go off if any is on, else on.
+    pub fn flick(&mut self, switch: Id) {
+        let Some(lights) = self.project.fixture(switch).map(|f| f.controls.clone()) else { return };
+        let any_on = lights.iter().filter_map(|id| self.project.fixture(*id)).any(|f| f.lamp().is_some_and(|l| l.on));
+        self.edit("", |p| {
+            for id in &lights {
+                if let Some(f) = p.fixture_mut(*id) {
+                    if let Some(lamp) = f.lamp() {
+                        f.lamp = Some(Lamp { on: !any_on, ..lamp });
+                    }
+                }
+            }
+        });
+    }
+
+    /// Adds a light to a switch, or takes it off.
+    pub fn link(&mut self, switch: Id, light: Id) {
+        if self.project.fixture(light).and_then(|f| f.lamp()).is_none() {
+            return;
+        }
+        self.edit("", |p| {
+            if let Some(f) = p.fixture_mut(switch) {
+                match f.controls.iter().position(|c| *c == light) {
+                    Some(i) => {
+                        f.controls.remove(i);
+                    }
+                    None => f.controls.push(light),
+                }
+            }
+        });
     }
 
     /// Turn the selected furniture, stair or ceiling fixture by `by` radians.
@@ -779,6 +828,6 @@ impl Host for State {
             ViewMode::Elevation => self.elevation,
             ViewMode::Model => self.camera,
         };
-        Some(Viewport { scene: self.scene.clone(), revision: self.scene_revision, camera, sun: self.sun, selected: self.selected, hovered: self.hovered })
+        Some(Viewport { scene: self.scene.clone(), revision: self.scene_revision, camera, sun: self.sun(), selected: self.selected, hovered: self.hovered })
     }
 }

@@ -16,6 +16,40 @@ struct Globals {
     fwd: vec4f,
     // x selected pick id, y hovered pick id (0 none).
     sel: vec4f,
+    // x sun strength 0..1, y sky strength 0..1, z number of lamps.
+    light: vec4f,
+    lamps: array<Lamp, 64>,
+}
+
+struct Lamp {
+    // xyz position, w spread: 0 shines all round, 1 only the way it faces.
+    pos: vec4f,
+    axis: vec4f,
+    // Colour times lumens, scaled so 150 lux draws as fully lit.
+    color: vec4f,
+    // The room it is in: nothing outside this box is lit.
+    lo: vec4f,
+    hi: vec4f,
+}
+
+// Light on a surface at `world` facing `n` from every lamp that is on.
+fn lamplight(world: vec3f, n: vec3f) -> vec3f {
+    var sum = vec3f(0.0);
+    let count = i32(g.light.z);
+    for (var k = 0; k < count; k++) {
+        let l = g.lamps[k];
+        if any(world < l.lo.xyz) || any(world > l.hi.xyz) {
+            continue;
+        }
+        let to = l.pos.xyz - world;
+        let d2 = max(dot(to, to), 0.02);
+        let dir = to / sqrt(d2);
+        let ndl = max(dot(n, dir), 0.0);
+        let facing = max(dot(-dir, l.axis.xyz), 0.0);
+        let candela = (1.0 - l.pos.w) / 12.566 + l.pos.w * facing / 3.1416;
+        sum += l.color.rgb * (candela * ndl / d2);
+    }
+    return sum;
 }
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -77,8 +111,9 @@ fn sky(dir: vec3f) -> vec3f {
     c = mix(c, ground, smoothstep(0.0, -0.25, up));
     // A soft glow around the sun.
     let s = max(dot(dir, g.sun.xyz), 0.0);
-    c += vec3f(1.0, 0.9, 0.7) * (pow(s, 400.0) * 3.0 + pow(s, 12.0) * 0.12);
-    return c;
+    c += vec3f(1.0, 0.9, 0.7) * (pow(s, 400.0) * 3.0 + pow(s, 12.0) * 0.12) * g.light.x;
+    // Night: the sky goes to a deep blue.
+    return mix(vec3f(0.012, 0.016, 0.03), c, g.light.y);
 }
 
 struct SkyOut {
@@ -420,12 +455,15 @@ fn fs(i: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         let ndl = max(dot(n, l), 0.0);
         let open = shadow(i.world, n);
         let lit = ndl * open;
-        let sun_col = vec3f(1.0, 0.95, 0.86) * 2.35;
+        // A low sun is weaker and warmer.
+        let sun_col = mix(vec3f(1.0, 0.6, 0.32), vec3f(1.0, 0.95, 0.86), smoothstep(0.0, 0.45, l.z)) * 2.35 * g.light.x;
+        let lamps = lamplight(i.world, n);
         // Sky from above, warm bounce from the ground below, and a fill from the eye so a
         // room under a ceiling still reads.
-        let hemi = mix(vec3f(0.36, 0.33, 0.30), vec3f(0.50, 0.60, 0.74), n.z * 0.5 + 0.5);
-        let fill = vec3f(0.22) * max(dot(n, view), 0.0);
-        var c = m.albedo * (sun_col * lit + hemi * 0.9 + fill);
+        let day = max(g.light.y, 0.035);
+        let hemi = mix(vec3f(0.36, 0.33, 0.30), vec3f(0.50, 0.60, 0.74), n.z * 0.5 + 0.5) * day;
+        let fill = vec3f(0.22) * max(dot(n, view), 0.0) * max(day, 0.12);
+        var c = m.albedo * (sun_col * lit + hemi * 0.9 + fill + lamps);
 
         let h = normalize(l + view);
         let r = clamp(m.roughness, 0.03, 1.0);
@@ -448,7 +486,7 @@ fn fs(i: VOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         }
         if pattern == 9 {
             let fg = 0.06 + 0.94 * fres;
-            c = mix(m.albedo * (hemi * 0.9 + sun_col * lit * 0.4), env * 1.1, clamp(fg + 0.12, 0.0, 1.0));
+            c = mix(m.albedo * (hemi * 0.9 + sun_col * lit * 0.4 + lamps * 0.5), env * 1.1, clamp(fg + 0.12, 0.0, 1.0));
             c += sun_col * min(spec, 8.0) * lit;
             alpha = clamp(mix(m.alpha, 0.92, fg) + min(spec, 1.0) * lit, 0.0, 1.0);
         }

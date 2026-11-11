@@ -239,3 +239,54 @@ fn keys_switch_tools_delete_and_nudge() {
     rt.update(|s, _| s.undo());
     assert_eq!(rt.state.project.furniture(sofa.id).unwrap().at, sofa.at);
 }
+
+#[test]
+fn a_switch_turns_its_lights_off_and_picks_new_ones_on_the_plan() {
+    let mut rt = app(sample::house());
+    let switch = level(&rt).fixtures.iter().find(|f| f.label == "Living room lights").unwrap().clone();
+    assert_eq!(switch.controls.len(), 6);
+    let lit = |rt: &Runtime<State>| rt.state.scene().lamps.len();
+    let before = lit(&rt);
+    rt.update(|s, _| {
+        s.select(Some(Pick::Fixture(switch.id)));
+        s.set_view(ViewMode::Model);
+    });
+    settle(&mut rt);
+    press(&mut rt, "switch-flick");
+    assert!(switch.controls.iter().all(|id| !rt.state.project.fixture(*id).unwrap().lamp().unwrap().on));
+    assert_eq!(lit(&rt), before - 6, "six fewer lamps light the scene");
+    press(&mut rt, "switch-flick");
+    assert_eq!(lit(&rt), before);
+
+    // Picking on the plan: a click on a light that isn't on the switch adds it, again removes it.
+    press(&mut rt, "switch-pick");
+    assert_eq!((rt.state.view, rt.state.linking), (ViewMode::Plan, Some(switch.id)));
+    let pendant = level(&rt).fixtures.iter().find(|f| matches!(f.kind, FixtureKind::Pendant { diameter, .. } if diameter > 0.4)).unwrap().id;
+    let at = on_plan(&rt, [13.0, 8.3]);
+    click(&mut rt, at);
+    assert!(rt.state.project.fixture(switch.id).unwrap().controls.contains(&pendant));
+    assert_eq!(rt.state.selected, Some(Pick::Fixture(switch.id)), "the switch stays selected while picking");
+    click(&mut rt, at);
+    assert!(!rt.state.project.fixture(switch.id).unwrap().controls.contains(&pendant));
+}
+
+#[test]
+fn the_sun_follows_the_clock_and_the_plans_north() {
+    let mut rt = app(sample::house());
+    rt.update(|s, _| {
+        s.edit("", |p| {
+            p.site.geo = Some(Geo { lat: 40.0, lon: -105.0 });
+            p.site.sun = SunSetting { by_clock: true, month: 6, day: 21, hour: 12.0, utc_offset: -7.0, ..p.site.sun };
+        })
+    });
+    // Noon in June at 40° N: high in the south, which is -Y on this plan.
+    let sun = rt.state.sun();
+    assert!(sun.altitude.to_degrees() > 65.0, "{}", sun.altitude.to_degrees());
+    assert!((sun.azimuth.to_degrees() + 90.0).abs() < 25.0, "plan angle {}", sun.azimuth.to_degrees());
+    // Turn the plan so +Y points east: the southern sun is now along +X.
+    rt.update(|s, _| s.edit("", |p| p.site.north = 90.0));
+    assert!(rt.state.sun().azimuth.to_degrees().abs() < 25.0, "{}", rt.state.sun().azimuth.to_degrees());
+    // At night it is below the horizon.
+    rt.update(|s, _| s.edit("", |p| p.site.sun.hour = 23.0));
+    assert!(rt.state.sun().altitude < 0.0);
+}

@@ -368,6 +368,8 @@ fn draw_fixture(d: &mut Draw, level: &Level, f: &Fixture, selected: bool) {
             d.line(add(c, [-k, k]), add(c, [k, -k]), 1.0, ink.light);
         }
         FixtureKind::TubeLight { length, width } => rect(d, length, width.max(d.px(4.0)), facing, ink.light.alpha(0.45), ink.light),
+        // A strip runs along its wall, or along its own turn on a ceiling.
+        FixtureKind::Strip { length } => rect(d, length, d.px(4.0), if on_wall { facing + FRAC_PI_2 } else { facing }, ink.light, ink.light),
         FixtureKind::Surface { diameter } => d.dot(c, (diameter / 2.0 * d.cam.zoom).max(r * 0.8), ink.light.alpha(0.2), Some(ink.light)),
         FixtureKind::Pendant { diameter, .. } => {
             let rr = (diameter / 2.0 * d.cam.zoom).max(r * 0.8);
@@ -701,6 +703,18 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
                 let half = r.size[0] / 2.0 - inset;
                 let ridge = [geom::rotate([-half, 0.0], r.turn), geom::rotate([half, 0.0], r.turn)];
                 d.dashed(add(r.center, ridge[0]), add(r.center, ridge[1]), 1.25, color);
+            }
+        }
+    }
+
+    // A selected switch shows what it controls.
+    if let Some(Pick::Fixture(id)) = s.selected {
+        if let Some((sw, (from, _))) = level.fixtures.iter().find(|f| f.id == id).and_then(|f| fixture_point(level, f).map(|p| (f, p))) {
+            for light in sw.controls.iter().filter_map(|c| level.fixtures.iter().find(|f| f.id == *c)) {
+                if let Some((to, _)) = fixture_point(level, light) {
+                    d.dashed(from, to, 1.25, ink.accent);
+                    d.dot(to, 9.0, Color { a: 0.0, ..ink.accent }, Some(ink.accent));
+                }
             }
         }
     }

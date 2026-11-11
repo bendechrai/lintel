@@ -10,6 +10,7 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 | --- | --- |
 | ![Plan](docs/plan.png) | ![Section through the house](docs/section.png) |
 | ![The walk-out basement from the garden](docs/back.png) | ![Picking a floor material and stain](docs/room.png) |
+| ![A December night, lit by its lamps](docs/night.png) | ![The garage door half open](docs/garage.png) |
 
 ## What it models
 
@@ -25,7 +26,12 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
   stays open.
 - **Stairs**, **roofs** (gable, hip, shed, flat).
 - **Fixtures**: power and data outlets, light switches, thermostats, smoke detectors,
-  downlights, recessed tube lights, surface and pendant lights, air vents.
+  downlights, recessed tube lights, LED strips in diffuser channels, surface and pendant
+  lights, air vents.
+- **Light**: each light has a source (LED, incandescent, halogen, fluorescent), lumens, colour
+  temperature and a dimmer, and lights its room in the 3D view. A switch knows the lights it
+  controls: flick it and they go on or off. The sun is set by hand, or follows the site's
+  latitude and longitude, the date and the time, down to night.
 - **Furniture and appliances**: a starter catalogue of 43 resizable pieces.
 - **Ground**: a height grid you can shape as a plane, or fetch from a public elevation
   service by latitude and longitude, plus draped surfaces (driveway, paths, patio).

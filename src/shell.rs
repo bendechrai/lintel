@@ -105,6 +105,29 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.camera.pitch = 0.16;
         s.camera.distance = 13.0;
     }),
+    ("night", |s| {
+        s.set_view(ViewMode::Model);
+        s.edit("", |p| {
+            p.site.geo = Some(crate::model::Geo { lat: 40.0, lon: -105.0 });
+            p.site.sun = crate::model::SunSetting { by_clock: true, month: 12, day: 21, hour: 21.0, utc_offset: -7.0, ..p.site.sun };
+        });
+        let main = s.project.levels.last().map(|l| l.id);
+        s.set_options(|o| o.top_level = main);
+        s.camera.pitch = 0.95;
+        s.camera.distance *= 0.8;
+    }),
+    ("evening", |s| {
+        s.set_view(ViewMode::Model);
+        s.edit("", |p| {
+            p.site.geo = Some(crate::model::Geo { lat: 40.0, lon: -105.0 });
+            p.site.sun = crate::model::SunSetting { by_clock: true, month: 6, day: 21, hour: 19.25, utc_offset: -7.0, ..p.site.sun };
+        });
+        s.camera.yaw = -2.6;
+        s.camera.pitch = 0.3;
+    }),
+    ("switch", |s| {
+        s.selected = first_of(s, |l| l.fixtures.iter().find(|f| f.label == "Living room lights").map(|f| Pick::Fixture(f.id)));
+    }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 

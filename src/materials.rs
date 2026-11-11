@@ -183,6 +183,24 @@ pub fn linear(c: [f32; 3]) -> [f32; 3] {
     c.map(to_linear)
 }
 
+/// The colour of a black body at `kelvin`, in linear RGB with the brightest channel at 1
+/// (Tanner Helland's fit to the Planckian locus).
+pub fn kelvin(kelvin: f32) -> [f32; 3] {
+    let t = kelvin.clamp(1000.0, 15000.0) / 100.0;
+    let r = if t <= 66.0 { 255.0 } else { 329.698_73 * (t - 60.0).powf(-0.133_204_76) };
+    let g = if t <= 66.0 { 99.470_8 * t.ln() - 161.119_57 } else { 288.122_17 * (t - 60.0).powf(-0.075_514_85) };
+    let b = if t >= 66.0 {
+        255.0
+    } else if t <= 19.0 {
+        0.0
+    } else {
+        138.517_73 * (t - 10.0).ln() - 305.044_8
+    };
+    let c = linear([r, g, b].map(|v| (v / 255.0).clamp(0.0, 1.0)));
+    let top = c[0].max(c[1]).max(c[2]).max(1e-6);
+    c.map(|v| v / top)
+}
+
 /// Looks materials up by id: the project's own first, then the built-in library.
 pub struct Library {
     all: Vec<Material>,

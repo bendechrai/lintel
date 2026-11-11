@@ -37,6 +37,33 @@ pub struct Scene {
     pub picks: Vec<Pick>,
     /// Bounding box of the building (levels and roofs, not terrain): min, max.
     pub bounds: ([f32; 3], [f32; 3]),
+    /// The lamps that are on, as point sources.
+    pub lamps: Vec<Lamp>,
+}
+
+/// A point of light. A strip or tube is several along its length.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lamp {
+    pub pos: [f32; 3],
+    /// The way it faces: down from a ceiling, out from a wall.
+    pub axis: [f32; 3],
+    /// 0 shines equally all round; 1 only into the half-space it faces, strongest along `axis`.
+    pub spread: f32,
+    /// Linear RGB of its colour temperature, brightest channel 1.
+    pub color: [f32; 3],
+    pub lumens: f32,
+    /// The room it is in, as a box: the live view lights nothing outside it, standing in
+    /// for the walls' shadows.
+    pub room: ([f32; 3], [f32; 3]),
+}
+
+impl Lamp {
+    /// Luminous intensity in candela toward a unit direction `to` (from the lamp).
+    pub fn candela(&self, to: [f32; 3]) -> f32 {
+        let all_round = self.lumens / (4.0 * std::f32::consts::PI);
+        let facing = self.lumens / std::f32::consts::PI * dot(to, self.axis).max(0.0);
+        all_round * (1.0 - self.spread) + facing * self.spread
+    }
 }
 
 impl Scene {

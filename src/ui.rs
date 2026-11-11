@@ -58,7 +58,7 @@ pub fn on_key(s: &mut State, ev: &KeyEvent, tx: &mut Tx) -> bool {
         Key::Command('o') => open_dialog(s, tx),
         Key::Command('d') => s.duplicate_selected(),
         Key::Escape => {
-            if s.editing.take().is_none() && s.picker.take().is_none() {
+            if s.editing.take().is_none() && s.picker.take().is_none() && s.linking.take().is_none() {
                 if s.tool != Tool::Select {
                     s.set_tool(Tool::Select);
                 } else {
@@ -217,10 +217,6 @@ fn options_bar(s: &State, th: &Th) -> El {
             let ortho = matches!(s.camera.projection, Projection::Orthographic { .. });
             bar = bar
                 .child(spacer())
-                .child(el().w(236.0).child(num(s, th, "Sun from", "sun-azimuth", s.sun.azimuth, Fmt::Degrees, 10f32.to_radians(), |s: &mut State, x| s.sun.azimuth = x)))
-                .child(el().w(236.0).child(num(s, th, "Sun height", "sun-altitude", s.sun.altitude, Fmt::Degrees, 5f32.to_radians(), |s: &mut State, x| {
-                    s.sun.altitude = x.clamp(5f32.to_radians(), 88f32.to_radians())
-                })))
                 .child(ghost(th, "projection", if ortho { "Parallel" } else { "Perspective" }, false).on_press(|s: &mut State| {
                     s.camera.projection = match s.camera.projection {
                         Projection::Perspective { fov_y } => Projection::Orthographic { height: 2.0 * s.camera.distance * (fov_y / 2.0).tan() },
@@ -312,6 +308,7 @@ fn toolbox(s: &State, th: &Th) -> El {
         ("Smoke detector", FixtureKind::SmokeDetector),
         ("Downlight", FixtureKind::Downlight { diameter: 0.1 }),
         ("Recessed tube light", FixtureKind::TubeLight { length: 1.2, width: 0.09 }),
+        ("LED strip", FixtureKind::Strip { length: 2.0 }),
         ("Surface light", FixtureKind::Surface { diameter: 0.3 }),
         ("Pendant light", FixtureKind::Pendant { diameter: 0.3, drop: 0.8 }),
         ("Air vent", FixtureKind::Vent { width: 0.6, height: 0.4 }),
@@ -467,6 +464,7 @@ fn status_bar(s: &State, th: &Th) -> El {
         s.status.clone()
     } else {
         match s.view {
+            ViewMode::Plan if s.linking.is_some() => "Click lights to add them to this switch, or take them off it. Esc when done.".to_string(),
             ViewMode::Plan => s.tool.hint().to_string(),
             ViewMode::Elevation => "Drag to pan, scroll to zoom, click to select. Turn on Section to cut through the house.".into(),
             ViewMode::Model => "Drag to orbit, Shift-drag to pan, scroll to zoom, click to select. “Open up to” lifts the roof and upper floors off.".into(),

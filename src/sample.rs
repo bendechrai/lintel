@@ -41,7 +41,7 @@ impl B {
     }
 
     fn fixture(&mut self, kind: FixtureKind, mount: Mount) -> Fixture {
-        Fixture { id: self.p.id(), kind, mount, label: String::new() }
+        Fixture::new(self.p.id(), kind, mount)
     }
 
     fn furniture(&mut self, key: &str, at: P2, turn: f32) -> Furniture {
@@ -88,7 +88,7 @@ pub fn house() -> Project {
         p: Project {
             name: "Sample house".into(),
             units: Units::Metric,
-            site: Site { terrain, patches: vec![], geo: None, north: 0.0 },
+            site: Site { terrain, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
             levels: vec![],
             roofs: vec![],
             materials: vec![],
@@ -348,6 +348,30 @@ pub fn house() -> Project {
         main.fixtures.push(f);
     }
 
+    // An LED strip under the wall cabinets, and switches wired to their lights.
+    let strip = b.fixture(FixtureKind::Strip { length: 2.4 }, Mount::Wall { wall: stair_east_id, side: WallSide::Right, at: 2.25, height: 1.43 });
+    let strip_id = strip.id;
+    main.fixtures.push(strip);
+    let lights = |main: &Level, pick: &dyn Fn(&Fixture) -> bool| -> Vec<Id> { main.fixtures.iter().filter(|f| f.lamp().is_some() && pick(f)).map(|f| f.id).collect() };
+    let at_of = |f: &Fixture| match f.mount {
+        Mount::Ceiling { at, .. } | Mount::Floor { at, .. } => at,
+        Mount::Wall { .. } => [7.5, 6.5],
+    };
+    let living = lights(&main, &|f| at_of(f)[0] > 8.4 && at_of(f)[1] < 5.2);
+    let hall = lights(&main, &|f| at_of(f)[0] > 6.2 && at_of(f)[0] < 8.4 && at_of(f)[1] < 4.6);
+    let kitchen = lights(&main, &|f| f.id == strip_id || (at_of(f)[0] > 7.4 && at_of(f)[1] > 5.2));
+    let garage = lights(&main, &|f| at_of(f)[0] < 6.2 && at_of(f)[1] < 6.4);
+    let mut switches = main.fixtures.iter_mut().filter(|f| matches!(f.kind, FixtureKind::Switch { .. }));
+    for (controls, label) in [(living, "Living room lights"), (kitchen, "Kitchen & dining lights"), (garage, "Garage lights")] {
+        if let Some(sw) = switches.next() {
+            sw.controls = controls;
+            sw.label = label.into();
+        }
+    }
+    drop(switches);
+    let id = b.p.id();
+    main.fixtures.push(Fixture { controls: hall, label: "Hall lights".into(), ..Fixture::new(id, FixtureKind::Switch { gangs: 1 }, Mount::Wall { wall: hall_east_id, side: WallSide::Left, at: 3.75, height: 1.1 }) });
+
     b.p.levels = vec![lower, main];
 
     // -----------------------------------------------------------------------------------------
@@ -390,7 +414,7 @@ pub fn blank() -> Project {
     let mut p = Project {
         name: "Untitled".into(),
         units: Units::Metric,
-        site: Site { terrain: Terrain::flat([-15.0, -15.0], [30.0, 30.0], 1.0), patches: vec![], geo: None, north: 0.0 },
+        site: Site { terrain: Terrain::flat([-15.0, -15.0], [30.0, 30.0], 1.0), patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
         levels: vec![],
         roofs: vec![],
         materials: vec![],

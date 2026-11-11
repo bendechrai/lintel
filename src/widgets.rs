@@ -57,6 +57,8 @@ pub enum Fmt {
     Percent,
     /// A plain number with two decimals.
     Number,
+    /// Hours in the model, shown as a clock time.
+    Time,
 }
 
 pub fn show(v: f32, fmt: Fmt, units: Units) -> String {
@@ -66,6 +68,10 @@ pub fn show(v: f32, fmt: Fmt, units: Units) -> String {
         Fmt::Count => format!("{}", v.round() as i64),
         Fmt::Percent => format!("{}%", (v * 100.0).round() as i64),
         Fmt::Number => format!("{}", (v * 100.0).round() / 100.0),
+        Fmt::Time => {
+            let minutes = (v.rem_euclid(24.0) * 60.0).round() as i32 % 1440;
+            format!("{:02}:{:02}", minutes / 60, minutes % 60)
+        }
     }
 }
 
@@ -77,6 +83,10 @@ pub fn read(text: &str, fmt: Fmt, units: Units) -> Option<f32> {
         Fmt::Count => plain(text).map(f32::round),
         Fmt::Percent => plain(text).map(|v| v / 100.0),
         Fmt::Number => plain(text),
+        Fmt::Time => match text.trim().split_once(':') {
+            Some((h, m)) => Some(h.trim().parse::<f32>().ok()? + m.trim().parse::<f32>().ok()? / 60.0),
+            None => plain(text),
+        },
     }
 }
 
@@ -417,7 +427,7 @@ mod tests {
 
     #[test]
     fn numbers_read_back_what_they_show() {
-        for (v, fmt) in [(2.4, Fmt::Length), (0.5, Fmt::Percent), (4.0, Fmt::Count), (std::f32::consts::FRAC_PI_2, Fmt::Degrees), (0.42, Fmt::Number)] {
+        for (v, fmt) in [(2.4, Fmt::Length), (0.5, Fmt::Percent), (4.0, Fmt::Count), (std::f32::consts::FRAC_PI_2, Fmt::Degrees), (0.42, Fmt::Number), (14.5, Fmt::Time)] {
             for units in [Units::Metric, Units::Imperial] {
                 let back = read(&show(v, fmt, units), fmt, units).unwrap();
                 assert!((back - v).abs() < 0.01, "{fmt:?} {units:?}: {v} → {} → {back}", show(v, fmt, units));

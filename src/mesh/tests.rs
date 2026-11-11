@@ -69,11 +69,11 @@ fn house() -> Project {
     for (i, kind) in kinds.iter().enumerate() {
         let at = [0.5 + i as f32 * 0.5, 1.0];
         for (j, mount) in [Mount::Wall { wall: 10, side: WallSide::Left, at: at[0], height: 1.1 }, Mount::Ceiling { at, turn: 0.4 }, Mount::Floor { at, turn: 0.0 }].into_iter().enumerate() {
-            level.fixtures.push(Fixture { id: 100 + (i * 3 + j) as Id, kind: *kind, mount, label: String::new() });
+            level.fixtures.push(Fixture::new(100 + (i * 3 + j) as Id, *kind, mount));
         }
     }
     // A fixture on a wall that isn't there is skipped.
-    level.fixtures.push(Fixture { id: 199, kind: FixtureKind::Data, mount: Mount::Wall { wall: 999, side: WallSide::Left, at: 0.0, height: 1.0 }, label: String::new() });
+    level.fixtures.push(Fixture::new(199, FixtureKind::Data, Mount::Wall { wall: 999, side: WallSide::Left, at: 0.0, height: 1.0 }));
     for (i, piece) in catalog::catalog().iter().enumerate() {
         let mut f = catalog::place(piece.key, 200 + i as Id, [3.0, 2.0]).unwrap();
         f.turn = i as f32 * 0.3;
@@ -94,6 +94,7 @@ fn house() -> Project {
             patches: vec![Patch { id: 80, name: "Drive".into(), outline: vec![[1.0, -8.0], [4.0, -8.0], [4.0, -0.5], [1.0, -0.5]], finish: Finish::of("concrete") }],
             geo: None,
             north: 0.0,
+            sun: SunSetting::default(),
         },
         levels: vec![level, upper],
         roofs: vec![roof(90, RoofShape::Gable, [3.0, 2.0]), roof(91, RoofShape::Hip, [3.0, 2.0]), roof(92, RoofShape::Shed, [3.0, 2.0]), roof(93, RoofShape::Flat, [3.0, 2.0]), Roof { size: [3.0, 6.0], ..roof(94, RoofShape::Hip, [3.0, 2.0]) }],
@@ -239,7 +240,7 @@ fn an_empty_project_builds_to_nothing() {
     let project = Project {
         name: String::new(),
         units: Units::Metric,
-        site: Site { terrain: Terrain { origin: [0.0, 0.0], spacing: 1.0, cols: 0, rows: 0, heights: vec![], finish: Finish::of("grass"), source: String::new() }, patches: vec![], geo: None, north: 0.0 },
+        site: Site { terrain: Terrain { origin: [0.0, 0.0], spacing: 1.0, cols: 0, rows: 0, heights: vec![], finish: Finish::of("grass"), source: String::new() }, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
         levels: vec![],
         roofs: vec![],
         materials: vec![],

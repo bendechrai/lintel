@@ -8,7 +8,7 @@ use super::geom::{DOWN, Frame3, UP, cuboid, prism};
 use super::rooms::{ceiling_at, floor_at};
 use super::walls::sign;
 use crate::model::{Finish, Fixture, FixtureKind, Level, Mount, Pick};
-use crate::scene::{add, cross};
+use crate::scene::{Lamp, add, cross};
 
 fn mount_frame(level: &Level, mount: &Mount) -> Option<Frame3> {
     match *mount {
@@ -41,6 +41,7 @@ pub fn build(cx: &mut Ctx, level: &Level) {
     for fixture in &level.fixtures {
         if let Some(f) = mount_frame(level, &fixture.mount) {
             fixture_mesh(cx, &f, fixture);
+            lamps(cx, level, &f, fixture);
         }
     }
 }
@@ -50,7 +51,8 @@ fn fixture_mesh(cx: &mut Ctx, f: &Frame3, fixture: &Fixture) {
     let white = cx.surf(&Finish::colored("plastic", [0.96, 0.96, 0.95]));
     let grey = cx.surf(&Finish::colored("plastic", [0.8, 0.8, 0.79]));
     let dark = cx.surf(&Finish::colored("plastic", [0.1, 0.1, 0.11]));
-    let light = cx.surf(&Finish::of("light"));
+    // A lamp that is off is just its diffuser.
+    let light = if fixture.output() > 0.0 { cx.surf(&Finish::of("light")) } else { cx.surf(&Finish::colored("plastic", [0.86, 0.86, 0.84])) };
     // A wall plate `gangs` wide; returns the centre x of each gang.
     let plate = |cx: &mut Ctx, gangs: u32| -> Vec<f32> {
         let g = gangs.clamp(1, 6);
@@ -98,6 +100,13 @@ fn fixture_mesh(cx: &mut Ctx, f: &Frame3, fixture: &Fixture) {
             cuboid(cx.scene, f, [-l - 0.012, -w - 0.012, 0.0], [l + 0.012, w + 0.012, 0.003], &white, pick);
             cuboid(cx.scene, f, [-l, -w, 0.003], [l, w, 0.005], &light, pick);
         }
+        FixtureKind::Strip { length } => {
+            // An aluminium channel 17 mm wide with a diffuser standing just proud of it.
+            let l = length.clamp(0.05, 30.0) * 0.5;
+            let metal = cx.surf(&Finish::of("steel"));
+            cuboid(cx.scene, f, [-l, -0.0085, 0.0], [l, 0.0085, 0.007], &metal, pick);
+            cuboid(cx.scene, f, [-l + 0.002, -0.0065, 0.007], [l - 0.002, 0.0065, 0.0095], &light, pick);
+        }
         FixtureKind::Surface { diameter } => {
             let r = diameter.clamp(0.03, 2.0) * 0.5;
             prism(cx.scene, f, r, 0.0, 0.035, 16, &white, &white, pick);
@@ -129,5 +138,44 @@ fn fixture_mesh(cx: &mut Ctx, f: &Frame3, fixture: &Fixture) {
                 cuboid(cx.scene, &slat, [-w + rim, -pitch * 0.3, -0.001], [w - rim, pitch * 0.3, 0.002], &white, pick);
             }
         }
+    }
+}
+
+/// The point sources a lit fitting stands for.
+fn lamps(cx: &mut Ctx, level: &Level, f: &Frame3, fixture: &Fixture) {
+    let lumens = fixture.output();
+    let Some(lamp) = fixture.lamp().filter(|_| lumens > 0.0) else { return };
+    // Where along the fitting the light comes from, how far off the surface, and how much
+    // of it goes forward.
+    let (length, off, spread) = match fixture.kind {
+        FixtureKind::Downlight { .. } => (0.0, 0.03, 1.0),
+        FixtureKind::TubeLight { length, .. } => (length, 0.03, 0.9),
+        FixtureKind::Strip { length } => (length, 0.03, 0.85),
+        FixtureKind::Surface { .. } => (0.0, 0.1, 0.6),
+        FixtureKind::Pendant { drop, .. } => (0.0, drop + 0.03, 0.5),
+        _ => return,
+    };
+    let n = ((length / 0.4).ceil() as usize).clamp(1, 10);
+    // Eyes and cameras adapt most of the way to a lamp's colour; show the rest.
+    let color = crate::materials::kelvin(lamp.kelvin).map(|c| c + (1.0 - c) * 0.55);
+    for i in 0..n {
+        let x = if n == 1 { 0.0 } else { (i as f32 + 0.5) / n as f32 * length - length / 2.0 };
+        let pos = f.at([x, 0.0, off]);
+        cx.scene.lamps.push(Lamp { pos, axis: f.z, spread, color, lumens: lumens / n as f32, room: room_box(level, pos) });
+    }
+}
+
+/// The box of the room a point is in: its outline's extent, floor to ceiling.
+fn room_box(level: &Level, p: [f32; 3]) -> ([f32; 3], [f32; 3]) {
+    let at = [p[0], p[1]];
+    let pad = 0.06;
+    match level.rooms.iter().find(|r| crate::geom::inside(at, &r.outline)) {
+        Some(r) => {
+            let (lo, hi) = r.outline.iter().fold(([f32::MAX; 2], [f32::MIN; 2]), |(lo, hi), q| ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])]));
+            let floor = level.elevation + r.floor_offset;
+            let top = floor + r.ceiling_height.unwrap_or(level.height);
+            ([lo[0] - pad, lo[1] - pad, floor - pad], [hi[0] + pad, hi[1] + pad, top + pad])
+        }
+        None => ([p[0] - 4.0, p[1] - 4.0, level.elevation - pad], [p[0] + 4.0, p[1] + 4.0, level.elevation + level.height + pad]),
     }
 }

@@ -109,6 +109,43 @@ pub struct Site {
     /// Compass bearing of the plan's +Y axis, in degrees clockwise from true north.
     #[serde(default)]
     pub north: f32,
+    #[serde(default)]
+    pub sun: SunSetting,
+}
+
+/// Where the sun is: set by hand, or worked out from the site's location and a date and time.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct SunSetting {
+    /// True takes the position from `month`, `day`, `hour` at the site's `geo`.
+    pub by_clock: bool,
+    /// By hand: compass bearing of the sun, degrees clockwise from true north.
+    pub azimuth: f32,
+    /// By hand: degrees above the horizon.
+    pub altitude: f32,
+    pub month: u32,
+    pub day: u32,
+    /// Local clock time in hours, 0..24.
+    pub hour: f32,
+    /// Hours the local clock is ahead of UTC.
+    pub utc_offset: f32,
+}
+
+impl Default for SunSetting {
+    fn default() -> SunSetting {
+        SunSetting { by_clock: false, azimuth: 153.0, altitude: 49.0, month: 6, day: 21, hour: 14.0, utc_offset: 0.0 }
+    }
+}
+
+impl Site {
+    /// The sun's compass bearing and height in degrees, as the setting gives them.
+    pub fn sun_position(&self) -> (f32, f32) {
+        if self.sun.by_clock {
+            let geo = self.geo.unwrap_or(Geo { lat: 40.0, lon: 0.0 });
+            crate::solar::position(geo.lat, geo.lon, self.sun.month, self.sun.day, self.sun.hour, self.sun.utc_offset)
+        } else {
+            (self.sun.azimuth, self.sun.altitude)
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -511,6 +548,103 @@ pub struct Fixture {
     pub mount: Mount,
     #[serde(default)]
     pub label: String,
+    /// For a light: its lamp, when it differs from the kind's usual one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lamp: Option<Lamp>,
+    /// For a switch: the lights it turns on and off.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub controls: Vec<Id>,
+}
+
+/// What a light fitting gives out.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Lamp {
+    pub source: Source,
+    /// Total light output. For a strip or tube, per metre of its length.
+    pub lumens: f32,
+    /// Colour temperature in kelvin: 2700 warm white, 4000 neutral, 6500 daylight.
+    pub kelvin: f32,
+    #[serde(default = "yes")]
+    pub on: bool,
+    /// 0..1.
+    #[serde(default = "Lamp::full")]
+    pub dim: f32,
+}
+
+impl Lamp {
+    fn full() -> f32 {
+        1.0
+    }
+
+    /// Electrical power at full brightness for `lumens` of light.
+    pub fn watts(&self, lumens: f32) -> f32 {
+        lumens / self.source.efficacy()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    Led,
+    Incandescent,
+    Halogen,
+    Fluorescent,
+}
+
+impl Source {
+    /// Typical lumens per watt.
+    pub fn efficacy(self) -> f32 {
+        match self {
+            Source::Led => 100.0,
+            Source::Incandescent => 14.0,
+            Source::Halogen => 20.0,
+            Source::Fluorescent => 70.0,
+        }
+    }
+
+    /// The colour temperature such a lamp usually has.
+    pub fn kelvin(self) -> f32 {
+        match self {
+            Source::Led => 3000.0,
+            Source::Incandescent => 2700.0,
+            Source::Halogen => 2900.0,
+            Source::Fluorescent => 4000.0,
+        }
+    }
+}
+
+impl Fixture {
+    pub fn new(id: Id, kind: FixtureKind, mount: Mount) -> Fixture {
+        Fixture { id, kind, mount, label: String::new(), lamp: None, controls: vec![] }
+    }
+
+    /// The lamp in a light fitting: its own, or the usual one for its kind. `None` for
+    /// anything that isn't a light.
+    pub fn lamp(&self) -> Option<Lamp> {
+        let usual = |lumens: f32| Lamp { source: Source::Led, lumens, kelvin: 3000.0, on: true, dim: 1.0 };
+        let usual = match self.kind {
+            FixtureKind::Downlight { .. } => usual(700.0),
+            FixtureKind::Surface { .. } => usual(1400.0),
+            FixtureKind::Pendant { .. } => usual(800.0),
+            FixtureKind::TubeLight { .. } => usual(2200.0),
+            FixtureKind::Strip { .. } => usual(1000.0),
+            _ => return None,
+        };
+        Some(self.lamp.unwrap_or(usual))
+    }
+
+    /// Light output in lumens, as dimmed, 0 when off.
+    pub fn output(&self) -> f32 {
+        let Some(lamp) = self.lamp() else { return 0.0 };
+        if !lamp.on {
+            return 0.0;
+        }
+        let per_metre = match self.kind {
+            FixtureKind::TubeLight { length, .. } | FixtureKind::Strip { length } => length,
+            _ => 1.0,
+        };
+        lamp.lumens * per_metre * lamp.dim.clamp(0.0, 1.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -537,6 +671,8 @@ pub enum FixtureKind {
     Downlight { diameter: f32 },
     /// A linear light recessed into the ceiling.
     TubeLight { length: f32, width: f32 },
+    /// An LED strip in a diffuser channel, on a wall, ceiling or floor.
+    Strip { length: f32 },
     /// A surface light on a wall or ceiling.
     Surface { diameter: f32 },
     /// A hanging light, `drop` metres below the ceiling.
@@ -556,6 +692,7 @@ impl FixtureKind {
             FixtureKind::SmokeDetector => "Smoke detector",
             FixtureKind::Downlight { .. } => "Downlight",
             FixtureKind::TubeLight { .. } => "Recessed tube light",
+            FixtureKind::Strip { .. } => "LED strip",
             FixtureKind::Surface { .. } => "Surface light",
             FixtureKind::Pendant { .. } => "Pendant light",
             FixtureKind::Vent { .. } => "Air vent",

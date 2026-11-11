@@ -432,6 +432,7 @@ fn fixture(s: &State, th: &Th, f: &Fixture) -> Vec<El> {
     match kind {
         FixtureKind::Outlet { gangs } => v.push(num(s, th, "Sockets", "fx-gangs", gangs as f32, Fmt::Count, 1.0, set_kind("fx-gangs", |_, x| FixtureKind::Outlet { gangs: x.clamp(1.0, 6.0) as u32 }))),
         FixtureKind::Switch { gangs } => v.push(num(s, th, "Switches", "fx-gangs", gangs as f32, Fmt::Count, 1.0, set_kind("fx-gangs", |_, x| FixtureKind::Switch { gangs: x.clamp(1.0, 6.0) as u32 }))),
+        FixtureKind::Strip { length } => v.push(num(s, th, "Length", "fx-length", length, Fmt::Length, step, set_kind("fx-length", |_, x| FixtureKind::Strip { length: x.clamp(0.1, 30.0) }))),
         FixtureKind::Downlight { diameter } => v.push(num(s, th, "Diameter", "fx-diameter", diameter, Fmt::Length, 0.01, set_kind("fx-diameter", |_, x| FixtureKind::Downlight { diameter: x.clamp(0.03, 0.5) }))),
         FixtureKind::Surface { diameter } => v.push(num(s, th, "Diameter", "fx-diameter", diameter, Fmt::Length, 0.01, set_kind("fx-diameter", |_, x| FixtureKind::Surface { diameter: x.clamp(0.05, 1.0) }))),
         FixtureKind::TubeLight { length, width } => {
@@ -465,6 +466,12 @@ fn fixture(s: &State, th: &Th, f: &Fixture) -> Vec<El> {
             })));
         }
         FixtureKind::SmokeDetector | FixtureKind::Thermostat | FixtureKind::Data => {}
+    }
+    if let Some(lamp) = f.lamp() {
+        v.extend(lamp_rows(s, th, f, lamp));
+    }
+    if matches!(kind, FixtureKind::Switch { .. }) {
+        v.extend(switch_rows(s, th, f));
     }
     v.push(section(th, "Position"));
     match f.mount {
@@ -512,6 +519,150 @@ fn fixture(s: &State, th: &Th, f: &Fixture) -> Vec<El> {
         }
     }
     v.push(actions(th, true, !matches!(f.mount, Mount::Wall { .. })));
+    v
+}
+
+/// Changes a light's lamp, starting from the one it has (its own or its kind's usual one).
+fn set_lamp<T: 'static>(tag: &'static str, id: Id, change: impl Fn(&mut Lamp, T) + 'static) -> impl Fn(&mut State, T) + 'static {
+    on_project(tag, move |p: &mut Project, x: T| {
+        if let Some(f) = p.fixture_mut(id) {
+            if let Some(mut lamp) = f.lamp() {
+                change(&mut lamp, x);
+                f.lamp = Some(lamp);
+            }
+        }
+    })
+}
+
+fn lamp_rows(s: &State, th: &Th, f: &Fixture, lamp: Lamp) -> Vec<El> {
+    let id = f.id;
+    let linear = matches!(f.kind, FixtureKind::TubeLight { .. } | FixtureKind::Strip { .. });
+    let sources = [("LED", Source::Led), ("Incandescent", Source::Incandescent), ("Halogen", Source::Halogen), ("Fluorescent", Source::Fluorescent)];
+    let total = if lamp.on { f.output() / lamp.dim.clamp(0.0, 1.0).max(1e-6) } else { f.output() };
+    let full = {
+        let per = match f.kind {
+            FixtureKind::TubeLight { length, .. } | FixtureKind::Strip { length } => length,
+            _ => 1.0,
+        };
+        lamp.lumens * per
+    };
+    let _ = total;
+    let temps = [("2700", 2700.0f32), ("3000", 3000.0), ("4000", 4000.0), ("5000", 5000.0), ("6500", 6500.0)];
+    let chips = temps.iter().map(|(name, k)| {
+        let k = *k;
+        let set = set_lamp("", id, move |l: &mut Lamp, _: ()| l.kelvin = k);
+        chip(th, format!("lamp-k-{name}"), name, (lamp.kelvin - k).abs() < 1.0).on_press(move |s: &mut State| set(s, ()))
+    });
+    vec![
+        section(th, "Lamp"),
+        toggle(th, "On", "lamp-on", lamp.on, set_lamp("", id, |l: &mut Lamp, on: bool| l.on = on)),
+        choice(th, "Source", "lamp-source", &lamp.source, &sources, set_lamp("", id, |l: &mut Lamp, x: Source| {
+            l.source = x;
+            l.kelvin = x.kelvin();
+        })),
+        num(s, th, if linear { "Lumens per metre" } else { "Lumens" }, "lamp-lumens", lamp.lumens, Fmt::Count, 50.0, set_lamp("lamp-lumens", id, |l: &mut Lamp, x: f32| l.lumens = x.clamp(1.0, 100_000.0))),
+        num(s, th, "Colour (K)", "lamp-kelvin", lamp.kelvin, Fmt::Count, 100.0, set_lamp("lamp-kelvin", id, |l: &mut Lamp, x: f32| l.kelvin = x.clamp(1500.0, 10_000.0))),
+        row().w_full().gap(4.0).pl(104.0).flex_wrap().gaps(4.0, 4.0).children(chips),
+        num(s, th, "Dimmed to", "lamp-dim", lamp.dim, Fmt::Percent, 0.05, set_lamp("lamp-dim", id, |l: &mut Lamp, x: f32| l.dim = x.clamp(0.0, 1.0))),
+        fact(th, "At full", format!("{:.0} lm, about {:.0} W", full, lamp.watts(full))),
+    ]
+}
+
+fn switch_rows(s: &State, th: &Th, f: &Fixture) -> Vec<El> {
+    let id = f.id;
+    let lights: Vec<&Fixture> = f.controls.iter().filter_map(|c| s.project.fixture(*c)).collect();
+    let any_on = lights.iter().any(|l| l.lamp().is_some_and(|l| l.on));
+    let picking = s.linking == Some(id);
+    let mut v = vec![section(th, "Controls")];
+    if lights.is_empty() {
+        v.push(text("No lights yet. Pick the lights this switch turns on and off.").font(SMALL).color(th.dim).wrap());
+    }
+    for l in &lights {
+        let light = l.id;
+        let label = if l.label.is_empty() { l.kind.name().to_string() } else { l.label.clone() };
+        let on = l.lamp().is_some_and(|l| l.on);
+        v.push(
+            row()
+                .w_full()
+                .h(26.0)
+                .gap(8.0)
+                .center_y()
+                .child(text(label).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
+                .child(text(if on { "on" } else { "off" }).font(SMALL).color(th.dim))
+                .child(chip(th, format!("unlink-{light}"), "Remove", false).on_press(move |s: &mut State| s.link(id, light))),
+        );
+    }
+    v.push(
+        row()
+            .w_full()
+            .gap(6.0)
+            .mt(4.0)
+            .flex_wrap()
+            .child(button(th, "switch-flick", if any_on { "Turn off" } else { "Turn on" }, false).on_press(move |s: &mut State| s.flick(id)))
+            .child(button(th, "switch-pick", if picking { "Done picking" } else { "Pick lights on the plan" }, picking).on_press(move |s: &mut State| {
+                s.linking = if s.linking == Some(id) { None } else { Some(id) };
+                if s.linking.is_some() && s.view != crate::app::ViewMode::Plan {
+                    s.set_view(crate::app::ViewMode::Plan);
+                }
+            })),
+    );
+    v.push(text("Double-click the switch on the plan to flick it.").font(SMALL).color(th.dim).wrap());
+    v
+}
+
+fn sun_rows(s: &State, th: &Th) -> Vec<El> {
+    let site = &s.project.site;
+    let sun = site.sun;
+    let (bearing, height) = site.sun_position();
+    let geo = site.geo.unwrap_or(Geo { lat: 40.0, lon: 0.0 });
+    let mut v = vec![
+        section(th, "Sun"),
+        choice(th, "Set by", "sun-mode", &sun.by_clock, &[("Hand", false), ("Place & time", true)], on_project("", |p: &mut Project, x: bool| {
+            p.site.sun.by_clock = x;
+            if x && p.site.geo.is_none() {
+                p.site.geo = Some(Geo { lat: 40.0, lon: 0.0 });
+            }
+        })),
+    ];
+    if sun.by_clock {
+        const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        v.push(num(s, th, "Latitude", "sun-lat", geo.lat as f32, Fmt::Number, 0.5, on_project("sun-lat", |p: &mut Project, x: f32| {
+            let g = p.site.geo.get_or_insert(Geo { lat: 40.0, lon: 0.0 });
+            g.lat = (x as f64).clamp(-89.0, 89.0);
+        })));
+        v.push(num(s, th, "Longitude", "sun-lon", geo.lon as f32, Fmt::Number, 0.5, on_project("sun-lon", |p: &mut Project, x: f32| {
+            let g = p.site.geo.get_or_insert(Geo { lat: 40.0, lon: 0.0 });
+            g.lon = (x as f64).clamp(-180.0, 180.0);
+            p.site.sun.utc_offset = crate::solar::natural_offset(g.lon);
+        })));
+        v.push(num(s, th, "Clock is UTC", "sun-utc", sun.utc_offset, Fmt::Number, 1.0, on_project("sun-utc", |p: &mut Project, x: f32| p.site.sun.utc_offset = x.clamp(-12.0, 14.0))));
+        v.push(num(s, th, "Month", "sun-month", sun.month as f32, Fmt::Count, 1.0, on_project("sun-month", |p: &mut Project, x: f32| p.site.sun.month = ((x as i32 - 1).rem_euclid(12) + 1) as u32)));
+        v.push(num(s, th, "Day", "sun-day", sun.day as f32, Fmt::Count, 1.0, on_project("sun-day", |p: &mut Project, x: f32| p.site.sun.day = x.clamp(1.0, 31.0) as u32)));
+        v.push(num(s, th, "Time", "sun-hour", sun.hour, Fmt::Time, 0.25, on_project("sun-hour", |p: &mut Project, x: f32| p.site.sun.hour = x.rem_euclid(24.0))));
+        let days = [("Mar 20", 3, 20), ("Jun 21", 6, 21), ("Sep 22", 9, 22), ("Dec 21", 12, 21)];
+        let chips = days.iter().map(|(name, m, d)| {
+            let (m, d) = (*m, *d);
+            chip(th, format!("sun-date-{m}"), name, sun.month == m && sun.day == d).on_press(move |s: &mut State| {
+                s.edit("", |p| {
+                    p.site.sun.month = m;
+                    p.site.sun.day = d;
+                })
+            })
+        });
+        v.push(row().w_full().pl(104.0).flex_wrap().gaps(4.0, 4.0).children(chips));
+        let hours = [("8:00", 8.0f32), ("12:00", 12.0), ("16:00", 16.0), ("21:00", 21.0)];
+        let chips = hours.iter().map(|(name, h)| {
+            let h = *h;
+            chip(th, format!("sun-time-{name}"), name, (sun.hour - h).abs() < 0.01).on_press(move |s: &mut State| s.edit("", |p| p.site.sun.hour = h))
+        });
+        v.push(row().w_full().pl(104.0).flex_wrap().gaps(4.0, 4.0).children(chips));
+        let when = format!("{} {}", sun.day, MONTHS[(sun.month.clamp(1, 12) - 1) as usize]);
+        v.push(fact(th, "Sun is", if height > 0.0 { format!("{:.0}° up, bearing {:.0}° on {when}", height, bearing) } else { format!("below the horizon on {when}") }));
+    } else {
+        v.push(num(s, th, "Bearing", "sun-azimuth", sun.azimuth.to_radians(), Fmt::Degrees, 5f32.to_radians(), on_project("sun-azimuth", |p: &mut Project, x: f32| p.site.sun.azimuth = x.to_degrees().rem_euclid(360.0))));
+        v.push(num(s, th, "Height", "sun-altitude", sun.altitude.to_radians(), Fmt::Degrees, 5f32.to_radians(), on_project("sun-altitude", |p: &mut Project, x: f32| p.site.sun.altitude = x.to_degrees().clamp(-20.0, 90.0))));
+        v.push(text("Bearing is a compass direction: 90° is east, 180° south, 270° west.").font(SMALL).color(th.dim).wrap());
+    }
     v
 }
 
@@ -786,6 +937,8 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
     let t = &p.site.terrain;
     let (lo, hi) = t.heights.iter().fold((f32::MAX, f32::MIN), |(lo, hi), h| (lo.min(*h), hi.max(*h)));
     let size = t.size();
+    v.extend(sun_rows(s, th));
+
     v.push(section(th, "Site & ground"));
     v.push(text(t.source.clone()).font(SMALL).color(th.dim).wrap());
     v.push(fact(th, "Extent", format!("{} × {}", units::length(size[0], p.units), units::length(size[1], p.units))));
