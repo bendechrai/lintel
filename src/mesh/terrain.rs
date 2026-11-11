@@ -1,6 +1,6 @@
 //! The ground: the site's height grid, dug out under the building, and the patches draped on it.
 //!
-//! The terrain is resampled to cells of half a metre or less (coarser on a very large site).
+//! The terrain is resampled to cells of a quarter of a metre or less (coarser on a very large site).
 //! A cell whose centre is under a room, or just outside one, is dug: drawn flat at the
 //! underside of that room's slab, with earth walls up to its undug neighbours. So the ground
 //! never comes up through a floor, and stays against the walls to within about a cell.
@@ -33,7 +33,7 @@ impl Ground {
         if !usable || t.heights.iter().any(|h| !h.is_finite()) {
             return Ground { origin: t.origin, step: [1.0, 1.0], cols: 0, rows: 0, natural: vec![], dug: vec![] };
         }
-        let mut s = t.spacing.min(0.5);
+        let mut s = t.spacing.min(0.25);
         if size[0] * size[1] / (s * s) > MAX_CELLS {
             s = (size[0] * size[1] / MAX_CELLS).sqrt();
         }
@@ -49,7 +49,7 @@ impl Ground {
         // Every room digs a pit: its outline, its box, and the underside of its slab. A cell is
         // in it when its centre is within `margin` of the outline, which keeps the pit's edge
         // outside the room whatever way the cells fall.
-        let margin = (step[0].max(step[1]) * 0.5 + 0.05).max(0.3);
+        let margin = step[0].max(step[1]) * 0.5 + 0.06;
         let pits: Vec<(&[P2], [f32; 4], f32)> = project
             .levels
             .iter()
@@ -115,6 +115,17 @@ impl Ground {
         if let Some(z) = self.cell(x0, y0) {
             return z;
         }
+        self.natural_height(p)
+    }
+
+    /// Ground height at a plan point as it was before any digging.
+    pub fn natural_height(&self, p: P2) -> f32 {
+        if self.is_empty() {
+            return 0.0;
+        }
+        let fx = ((p[0] - self.origin[0]) / self.step[0]).clamp(0.0, (self.cols - 1) as f32);
+        let fy = ((p[1] - self.origin[1]) / self.step[1]).clamp(0.0, (self.rows - 1) as f32);
+        let (x0, y0) = ((fx as usize).min(self.cols - 2), (fy as usize).min(self.rows - 2));
         let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
         let a = self.post(x0, y0) + (self.post(x0 + 1, y0) - self.post(x0, y0)) * tx;
         let b = self.post(x0, y0 + 1) + (self.post(x0 + 1, y0 + 1) - self.post(x0, y0 + 1)) * tx;
@@ -161,7 +172,7 @@ pub fn build(cx: &mut Ctx, project: &Project, ground: &Ground) {
                 stack.push([a, m, c]);
                 stack.push([m, b, c]);
             } else {
-                smooth_tri(cx.scene, t.map(|p| [p[0], p[1], ground.height(p) + 0.03]), t.map(|p| ground.normal(p)), t, &s, pick);
+                smooth_tri(cx.scene, t.map(|p| [p[0], p[1], ground.natural_height(p) + 0.03]), t.map(|p| ground.normal(p)), t, &s, pick);
             }
         }
     }

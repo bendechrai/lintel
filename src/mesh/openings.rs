@@ -177,7 +177,7 @@ pub fn garage(cx: &mut Ctx, wf: &Frame3, h: f32, hole: Hole, door: &GarageDoor, 
             };
             let n = door.panels.clamp(1, 12);
             let each = hgt / n as f32;
-            let gap = 0.005f32.min(each * 0.2);
+            let gap = 0.011f32.min(each * 0.2);
             for i in 0..n {
                 let d0 = i as f32 * each + open * rise;
                 panel(cx, track(d0 + gap), track(d0 + each - gap), thick);
