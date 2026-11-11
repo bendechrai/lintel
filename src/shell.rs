@@ -151,6 +151,22 @@ fn first_of(s: &State, f: impl Fn(&crate::model::Level) -> Option<Pick>) -> Opti
     s.project.levels.iter().rev().find_map(f)
 }
 
+/// The main level cut open from above, at `hour` on midsummer's day at 40° N.
+fn cutaway_at(s: &mut State, hour: f32) {
+    s.bare = true;
+    s.set_view(ViewMode::Model);
+    s.edit("", |p| {
+        p.site.geo = Some(crate::model::Geo { lat: 40.0, lon: -105.0 });
+        p.site.sun = crate::model::SunSetting { by_clock: true, month: 6, day: 21, hour, utc_offset: -7.0, ..p.site.sun };
+    });
+    let main = s.project.levels.last().map(|l| l.id);
+    s.set_options(|o| o.top_level = main);
+    s.camera.pitch = 0.9;
+    s.camera.yaw = -2.25;
+    s.camera.distance *= 0.62;
+    s.camera.target = [7.6, 5.2, 0.6];
+}
+
 /// Named states for headless snapshots and the docs.
 const SCENES: &[(&str, fn(&mut State))] = &[
     ("plan", |_| {}),
@@ -256,6 +272,41 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.load_underlays();
         s.set_tool(Tool::Wall);
     }),
+    ("shot-t0", |s| cutaway_at(s, 5.75)),
+    ("shot-t1", |s| cutaway_at(s, 8.0)),
+    ("shot-t2", |s| cutaway_at(s, 11.0)),
+    ("shot-t3", |s| cutaway_at(s, 14.0)),
+    ("shot-t4", |s| cutaway_at(s, 17.0)),
+    ("shot-t5", |s| cutaway_at(s, 19.4)),
+    ("shot-t6", |s| cutaway_at(s, 21.5)),
+    ("shot-front", |s| {
+        s.bare = true;
+        s.set_view(ViewMode::Model);
+        s.camera.yaw = -2.0;
+        s.camera.pitch = 0.2;
+        s.camera.distance *= 0.72;
+    }),
+    ("shot-back", |s| {
+        s.bare = true;
+        s.set_view(ViewMode::Model);
+        s.camera.yaw = 1.9;
+        s.camera.pitch = 0.2;
+        s.camera.distance *= 0.75;
+    }),
+    ("shot-lux", |s| {
+        cutaway_at(s, 14.0);
+        s.lux.levels = Some(crate::lux::compute(&s.project, &s.lux.settings));
+        s.lux.show = true;
+        s.rebuild_scene();
+    }),
+    ("shot-section", |s| {
+        s.bare = true;
+        s.side = crate::app::Side::East;
+        s.section = Some(5.0);
+        s.set_view(ViewMode::Elevation);
+        s.aim_elevation(true);
+    }),
+    ("shot-plan", |s| s.bare = true),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 

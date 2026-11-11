@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lintel — draw your house, then walk the sun through it</title>
+<meta name="description" content="Lintel is a free, open-source home modeller: plans, sections and a 3D model of your house, on flat or sloping ground, with sunlight by date and time and calculated light levels.">
+<meta property="og:title" content="Lintel — draw your house, then walk the sun through it">
+<meta property="og:description" content="Plans, sections and a 3D model of your home, with real sun positions and calculated light levels. Free and open source.">
+<meta property="og:image" content="https://bendechrai.github.io/lintel/img/t3.jpg">
+<meta name="color-scheme" content="light dark">
+<script>
+// Links made before the app moved to /app/ still open their house.
+if (location.hash.startsWith('#p=') || /[?&]project=/.test(location.search)) location.replace('app/' + location.search + location.hash);
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Day and night ends of the page; script mixes between them as the sun moves. */
+  --paper: #f4f0e6; --ink: #1b1d21; --dim: #6a6f78; --line: #d9d3c4; --card: #fbf9f3;
+  --blue: #2450d8; --amber: #e8962a; --grid: rgba(36, 80, 216, .07);
+  --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.6 var(--body);
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px; background-position: center top;
+}
+a { color: inherit; }
+.wrap { width: min(1180px, 100% - 40px); margin-inline: auto; }
+.mono { font: 500 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+
+/* Top bar */
+header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.mark { display: flex; align-items: center; gap: 10px; font: 600 22px/1 var(--display); text-decoration: none; letter-spacing: -.01em; }
+.mark svg { width: 26px; height: 26px; }
+nav { display: flex; gap: 22px; margin-left: auto; font-size: 14.5px; }
+nav a { text-decoration: none; color: var(--dim); }
+nav a:hover { color: var(--ink); }
+.btn { display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 20px; border-radius: 10px; font: 600 15px/1 var(--body); text-decoration: none; border: 1px solid var(--ink); transition: transform .15s, background .15s; white-space: nowrap; }
+.btn:hover { transform: translateY(-1px); }
+.btn.solid { background: var(--ink); color: var(--paper); }
+.btn.blue { background: var(--blue); border-color: var(--blue); color: #fff; }
+.btn.small { height: 36px; padding: 0 14px; font-size: 14px; }
+
+/* Hero */
+.hero { padding: 48px 0 36px; }
+.hero h1 { font: 400 clamp(44px, 6.6vw, 92px)/.98 var(--display); letter-spacing: -.035em; margin: 14px 0 22px; max-width: 13ch; font-variation-settings: "opsz" 144; }
+.hero h1 em { font-style: italic; color: var(--blue); font-weight: 300; }
+.hero p.lede { font-size: clamp(18px, 1.7vw, 21px); max-width: 56ch; color: var(--dim); margin: 0 0 30px; }
+.hero p.lede b { color: var(--ink); font-weight: 500; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.cta .note { font-size: 13.5px; color: var(--dim); margin-left: 4px; }
+
+/* The board: the house, and the sun you can drag */
+.board { margin-top: 36px; position: relative; border: 1px solid var(--ink); border-radius: 14px; background: var(--card); box-shadow: 0 30px 80px -40px rgba(0,0,0,.45), 10px 10px 0 -1px var(--paper), 10px 10px 0 0 var(--line); }
+.stage { position: relative; aspect-ratio: 16 / 10; overflow: hidden; border-radius: 13px 13px 0 0; background: #cfd6dc; }
+.stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; will-change: opacity; }
+.stage img:first-child { opacity: 1; }
+.tag { position: absolute; font: 500 11px/1 var(--mono); letter-spacing: .06em; padding: 7px 9px; border-radius: 6px; background: rgba(255,255,255,.88); color: #1b1d21; border: 1px solid rgba(0,0,0,.15); }
+.tag.tl { left: 14px; top: 14px; } .tag.tr { right: 14px; top: 14px; }
+.sun { display: grid; grid-template-columns: auto 1fr auto; gap: 18px; align-items: center; padding: 16px 20px 18px; border-top: 1px solid var(--ink); }
+.sun .clock { font: 500 26px/1 var(--mono); min-width: 5.2ch; font-variant-numeric: tabular-nums; }
+.sun .what { font-size: 13.5px; color: var(--dim); text-align: right; min-width: 15ch; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 34px; background: transparent; cursor: grab; }
+input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #26305c, #f0b35a 14%, #9fc7ee 34%, #9fc7ee 66%, #f08a4b 86%, #131629); }
+input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #26305c, #f0b35a 14%, #9fc7ee 34%, #9fc7ee 66%, #f08a4b 86%, #131629); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 30px; height: 30px; margin-top: -12px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff6d8, #f5b942 60%, #e8962a); border: 2px solid var(--ink); box-shadow: 0 0 0 6px color-mix(in srgb, var(--amber) 25%, transparent); }
+input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff6d8, #f5b942 60%, #e8962a); border: 2px solid var(--ink); }
+.hint { margin: 14px 2px 0; font-size: 14px; color: var(--dim); display: flex; gap: 10px; align-items: center; }
+.hint svg { flex: none; }
+
+section { padding: 96px 0; }
+h2 { font: 400 clamp(34px, 4.6vw, 62px)/1.02 var(--display); letter-spacing: -.03em; margin: 12px 0 18px; max-width: 18ch; }
+h2 em { font-style: italic; font-weight: 300; color: var(--blue); }
+.sub { color: var(--dim); max-width: 60ch; font-size: 18px; margin: 0; }
+
+/* The plan that draws itself */
+.draw { display: grid; grid-template-columns: 1fr 1.15fr; gap: 56px; align-items: center; }
+.sheet { border: 1px solid var(--ink); border-radius: 12px; background: var(--card); padding: 22px; position: relative; }
+.sheet svg { width: 100%; height: auto; display: block; }
+.sheet .wall { fill: none; stroke: var(--ink); stroke-width: 5; stroke-linecap: square; stroke-linejoin: miter; stroke-dasharray: var(--len); stroke-dashoffset: var(--len); }
+.sheet .thin { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-dasharray: var(--len); stroke-dashoffset: var(--len); }
+.sheet .dim { stroke: var(--blue); stroke-width: 1; fill: none; opacity: 0; }
+.sheet text { font: 500 11px var(--mono); fill: var(--dim); opacity: 0; }
+.sheet text.room { font: 500 13px var(--body); fill: var(--ink); }
+.sheet text.d { fill: var(--blue); }
+.sheet .floor { opacity: 0; }
+.sheet.on .wall, .sheet.on .thin { animation: stroke 1.5s cubic-bezier(.6,.1,.2,1) forwards; animation-delay: calc(var(--i) * .16s); }
+.sheet.on .floor { animation: fade .9s 2.6s forwards; }
+.sheet.on text, .sheet.on .dim { animation: fade .7s 3s forwards; }
+@keyframes stroke { to { stroke-dashoffset: 0; } }
+@keyframes fade { to { opacity: 1; } }
+.list { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 14px; }
+.list li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; }
+.list li::before { content: ""; width: 18px; height: 2px; background: var(--blue); margin-top: 13px; }
+.list b { font-weight: 600; }
+
+/* Three views */
+.views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 44px; }
+.view { border: 1px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--card); }
+.view img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; border-bottom: 1px solid var(--ink); background: #e7e3d8; }
+.view div { padding: 16px 18px 20px; }
+.view h3 { font: 500 23px/1.15 var(--display); margin: 6px 0 6px; letter-spacing: -.01em; }
+.view p { margin: 0; color: var(--dim); font-size: 15.5px; }
+
+/* Slope */
+.slope { display: grid; grid-template-columns: 1.2fr 1fr; gap: 56px; align-items: center; }
+.frame { border: 1px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--card); }
+.frame img { width: 100%; display: block; }
+
+/* Light levels */
+.lux { display: grid; grid-template-columns: 1fr 1.2fr; gap: 56px; align-items: center; }
+.scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin: 26px 0 8px; max-width: 460px; }
+.scale i { height: 12px; border-radius: 3px; }
+.scale span { font: 500 11px var(--mono); color: var(--dim); }
+.figs { display: grid; grid-template-columns: repeat(3, auto); gap: 8px 28px; margin-top: 24px; width: fit-content; }
+.figs b { font: 500 34px/1 var(--display); letter-spacing: -.02em; }
+.figs span { font-size: 13.5px; color: var(--dim); }
+
+/* Materials */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; margin-top: 40px; }
+.sw { border: 1px solid var(--ink); border-radius: 10px; overflow: hidden; background: var(--card); }
+.sw i { display: block; height: 78px; border-bottom: 1px solid var(--ink); }
+.sw span { display: block; padding: 8px 10px; font-size: 13px; }
+.sw small { display: block; color: var(--dim); font: 500 10.5px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+
+/* Everything else, as a schedule */
+.schedule { margin-top: 40px; border-top: 1px solid var(--ink); }
+.schedule div { display: grid; grid-template-columns: 220px 1fr; gap: 24px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.schedule dt { font: 500 20px/1.2 var(--display); }
+.schedule dd { margin: 0; color: var(--dim); }
+
+/* Get it */
+.get { border: 1px solid var(--ink); border-radius: 18px; background: var(--card); padding: clamp(28px, 5vw, 64px); display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; }
+.get h2 { margin-top: 0; }
+.dl { display: grid; gap: 10px; }
+.dl a.row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; background: var(--paper); }
+.dl a.row:hover { border-color: var(--ink); }
+.dl a.row.you { border-color: var(--blue); box-shadow: inset 0 0 0 1px var(--blue); }
+.dl a.row b { font-weight: 600; } .dl a.row small { display: block; color: var(--dim); font-size: 13px; }
+.dl a.row span { font: 500 12px var(--mono); color: var(--blue); }
+.fine { font-size: 13.5px; color: var(--dim); margin: 14px 0 0; }
+
+footer { padding: 46px 0 60px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14.5px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 30px; align-items: center; }
+footer a { color: var(--ink); }
+
+@media (max-width: 900px) {
+  nav a:not(.btn) { display: none; }
+  .draw, .slope, .lux, .get { grid-template-columns: 1fr; gap: 30px; }
+  .views { grid-template-columns: 1fr; }
+  .schedule div { grid-template-columns: 1fr; gap: 4px; }
+  .sun { grid-template-columns: auto 1fr; } .sun .what { grid-column: 1 / -1; text-align: left; }
+  section { padding: 64px 0; } .hero { padding-top: 40px; }
+  .tag.tr { top: auto; bottom: 14px; left: 14px; right: auto; } .tag { font-size: 10px; }
+  .lux .frame { order: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet .wall, .sheet .thin { stroke-dashoffset: 0; animation: none !important; }
+  .sheet text, .sheet .dim, .sheet .floor { opacity: 1; animation: none !important; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="mark" href="./" aria-label="Lintel">
+      <svg viewBox="0 0 26 26" aria-hidden="true"><path d="M2 8h22M5 8v16M21 8v16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/><path d="M2 3.5h22" stroke="#2450d8" stroke-width="2.6"/></svg>
+      Lintel
+    </a>
+    <nav>
+      <a href="#draw">Draw</a>
+      <a href="#light">Light</a>
+      <a href="#materials">Materials</a>
+      <a href="https://github.com/bendechrai/lintel">GitHub</a>
+      <a class="btn solid small" href="#get">Get Lintel</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div class="mono">A home modeller · free and open source</div>
+    <h1>Draw your house. Then <em>walk the sun</em> through it.</h1>
+    <p class="lede">Lintel turns a floor plan into a model you can open up, cut through and light. <b>Plan the change before you make it:</b> move a wall, try the oak floor stained walnut, see where the afternoon sun lands in December.</p>
+    <div class="cta">
+      <a class="btn blue" href="app/">Open it in your browser</a>
+      <a class="btn" href="#get" id="hero-dl">Download</a>
+      <span class="note">No account. Nothing to install for the browser version.</span>
+    </div>
+
+    <div class="board" id="board">
+      <div class="stage" id="stage" aria-label="The sample house with its roof lifted off, at the time of day chosen below">
+        <img src="img/t3.jpg" alt="The sample house cut open from above, in afternoon light" data-t="3">
+        <span class="tag tl">SAMPLE HOUSE · MAIN LEVEL · ROOF OFF</span>
+        <span class="tag tr" id="place">21 JUNE · 40° N</span>
+      </div>
+      <div class="sun">
+        <div class="clock" id="clock">14:00</div>
+        <input id="time" type="range" min="0" max="6" step="0.01" value="3" aria-label="Time of day">
+        <div class="what" id="what">Afternoon sun from the west</div>
+      </div>
+    </div>
+    <p class="hint">
+      <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="4.2" fill="#f5b942" stroke="currentColor"/><g stroke="currentColor" stroke-linecap="round"><path d="M11 1.5v3M11 17.5v3M1.5 11h3M17.5 11h3M4.3 4.3l2.1 2.1M15.6 15.6l2.1 2.1M4.3 17.7l2.1-2.1M15.6 6.4l2.1-2.1"/></g></svg>
+      Drag the sun. These are renders from Lintel itself: the sun's position comes from the latitude, the date and the clock, and after dark the house is lit by its own lamps.
+    </p>
+  </div>
+</section>
+
+<section id="draw">
+  <div class="wrap draw">
+    <div>
+      <div class="mono">01 · Draw</div>
+      <h2>Walls first. <em>Everything else</em> hangs off them.</h2>
+      <p class="sub">Drag out a wall and it snaps to the grid and to the walls it meets. Type a length the way you'd say it: <span style="font-family:var(--mono);font-size:.9em">2400mm</span>, <span style="font-family:var(--mono);font-size:.9em">2.4</span> or <span style="font-family:var(--mono);font-size:.9em">7' 10 1/2"</span>.</p>
+      <ul class="list">
+        <li><span><b>Doors, windows, openings and recesses</b> sit in a wall and slide along it. Five door styles, six window styles, frames and architraves.</span></li>
+        <li><span><b>Garage doors that work</b>: sectional, roller or tilt-up, any width, drawn as open as you like.</span></li>
+        <li><span><b>Rooms of any shape</b>, each with its own floor, ceiling height and finishes. Where there's no room there's no floor, so a stairwell stays open.</span></li>
+        <li><span><b>Trace what you have</b>: lay a scan of existing plans under the drawing, set its scale from one known length, and draw over it.</span></li>
+      </ul>
+    </div>
+    <div class="sheet" id="sheet">
+      <svg viewBox="-46 -40 700 540" role="img" aria-label="A floor plan drawing itself: outer walls, inner walls, then room names and dimensions">
+        <g class="floor">
+          <rect x="336" y="232" width="264" height="208" fill="#c9a26b" opacity=".28"/>
+          <path d="M296 256h40v-24h264v-232h-304z" fill="#bf9c70" opacity=".2"/>
+          <rect x="0" y="184" width="248" height="256" fill="#9aa0a6" opacity=".2"/>
+        </g>
+        <!-- Outside walls, then inside. 1 m = 40 units; the street is at the bottom. -->
+        <path class="wall" style="--len:2080;--i:0" d="M0 440h600v-440h-600z"/>
+        <path class="wall" style="--len:256;--i:3" d="M248 440v-256"/>
+        <path class="wall" style="--len:248;--i:4" d="M0 184h248"/>
+        <path class="wall" style="--len:184;--i:5" d="M248 184v-184"/>
+        <path class="wall" style="--len:184;--i:6" d="M120 184v-184"/>
+        <path class="wall" style="--len:184;--i:7" d="M336 440v-184"/>
+        <path class="wall" style="--len:160;--i:8" d="M296 256v-160"/>
+        <path class="wall" style="--len:48;--i:9" d="M248 96h48"/>
+        <path class="wall" style="--len:96;--i:10" d="M296 96v-96"/>
+        <!-- Openings: gaps in the walls, with door swings and window lines. -->
+        <g stroke="var(--card)" stroke-width="7" class="floor">
+          <path d="M26 440h196M278 440h37M416 440h104M600 300v36M600 92v44M408 0h96M300 0h72M40 0h36"/>
+          <path d="M44 184h33M166 184h33M336 316v72"/>
+        </g>
+        <path class="thin" style="--len:120;--i:12" d="M278 440v-37a37 37 0 0 0 37 37"/>
+        <path class="thin" style="--len:110;--i:13" d="M44 184v-33a33 33 0 0 1 33 33"/>
+        <path class="thin" style="--len:110;--i:13" d="M199 184v-33a33 33 0 0 0 -33 33"/>
+        <path class="thin" style="--len:210;--i:14" d="M416 440h104M416 436h104"/>
+        <path class="thin" style="--len:200;--i:14" d="M408 0h96M408 4h96"/>
+        <path class="thin" style="--len:420;--i:15" d="M26 428h196" stroke-dasharray="6 5"/>
+        <!-- Dimensions -->
+        <path class="dim" d="M0 470h600M0 462v16M600 462v16M-26 0v440M-34 0h16M-34 440h16"/>
+        <text class="d" x="300" y="490" text-anchor="middle">15.0 m</text>
+        <text class="d" x="-32" y="224" text-anchor="middle" transform="rotate(-90 -32 224)">11.0 m</text>
+        <text class="room" x="124" y="316" text-anchor="middle">Garage</text><text x="124" y="334" text-anchor="middle">39.7 m²</text>
+        <text class="room" x="468" y="340" text-anchor="middle">Living room</text><text x="468" y="358" text-anchor="middle">34.3 m²</text>
+        <text class="room" x="452" y="120" text-anchor="middle">Kitchen &amp; dining</text><text x="452" y="138" text-anchor="middle">44.7 m²</text>
+        <text class="room" x="292" y="352" text-anchor="middle">Hall</text>
+        <text class="room" x="184" y="96" text-anchor="middle">Laundry</text>
+        <text class="room" x="60" y="96" text-anchor="middle">Workshop</text>
+        <text x="300" y="-18" text-anchor="middle">BACK GARDEN · 2.9 M BELOW THE STREET</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">02 · Look</div>
+    <h2>One model, <em>three ways</em> to read it.</h2>
+    <p class="sub">The plan is where you draw. The section and the 3D view are the same house, kept in step as you change it.</p>
+    <div class="views">
+      <article class="view"><img src="img/plan.jpg" alt="The plan of the main level with walls, doors, furniture, lights and outlets" loading="lazy"><div><span class="mono">From above</span><h3>Plan</h3><p>Walls, doors, windows, furniture, and where every outlet, switch and light goes.</p></div></article>
+      <article class="view"><img src="img/section.jpg" alt="A section through the house showing two levels, the stair and the sloping ground" loading="lazy"><div><span class="mono">From the side</span><h3>Elevation &amp; section</h3><p>Look at any face, or cut through the middle to see floors, stairs and ceiling heights.</p></div></article>
+      <article class="view"><img src="img/front.jpg" alt="The house in 3D from the street" loading="lazy"><div><span class="mono">All round</span><h3>3D</h3><p>Orbit the outside, or lift the roof and upper floors off to look down into the rooms.</p></div></article>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap slope">
+    <div class="frame"><img src="img/back.jpg" alt="The back of the sample house: the ground falls away so the basement opens onto the garden under a deck" loading="lazy"></div>
+    <div>
+      <div class="mono">03 · Ground</div>
+      <h2>Built for land that <em>isn't flat</em>.</h2>
+      <p class="sub">The front door at street level and a basement that walks out to the garden: that's just a level with its floor below zero, on ground that falls away. Shape the ground as a slope, or fetch real heights for your address from public elevation data.</p>
+      <ul class="list">
+        <li><span>Driveways, paths and patios drape over the ground.</span></li>
+        <li><span>Walls can run down to meet falling ground.</span></li>
+        <li><span>Gable, hip, shed and flat roofs.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="light">
+  <div class="wrap lux">
+    <div>
+      <div class="mono">04 · Light</div>
+      <h2>Light you can <em>put a number on</em>.</h2>
+      <p class="sub">Give each fitting its lumens and colour temperature, link switches to the lights they control, and flick them. Then ask for the light level in every room: sun and sky through the windows, lamps, shadows, and light bounced off the walls.</p>
+      <div class="scale" aria-hidden="true">
+        <i style="background:#120f40"></i><i style="background:#294dbd"></i><i style="background:#1a9e8c"></i><i style="background:#8ccc40"></i><i style="background:#fac72e"></i>
+        <span>1 lux</span><span>10</span><span>100</span><span>1 000</span><span>10 000</span>
+      </div>
+      <div class="figs">
+        <b>150</b><b>1 200</b><b>43 000</b>
+        <span>living room, lamps at night</span><span>kitchen by day</span><span>the deck in sun</span>
+      </div>
+      <p class="fine">A planning estimate from a small path tracer, checked against the inverse-square law and the energy balance of a closed room. It doesn't replace a lighting designer's photometric report.</p>
+    </div>
+    <div class="frame"><img src="img/lux.jpg" alt="Light levels drawn as a colour map over the floors of the house" loading="lazy"></div>
+  </div>
+</section>
+
+<section id="materials">
+  <div class="wrap">
+    <div class="mono">05 · Finish</div>
+    <h2>Paint takes any colour. <em>Birch is birch.</em></h2>
+    <p class="sub">About 55 surfaces, drawn procedurally. A painted wall is whatever colour you choose. A timber keeps its own colour, and a stain over it lets the grain show through. Marble, brick and concrete are the colour they are.</p>
+    <div class="swatches">
+      <div class="sw"><i style="background:#f2efe8"></i><span>Paint<small>any colour</small></span></div>
+      <div class="sw"><i style="background:#64747c"></i><span>Lap siding<small>any colour</small></span></div>
+      <div class="sw"><i style="background:repeating-linear-gradient(90deg,#ecd9b4 0 22px,#e3cea6 22px 24px,#efdcb8 24px 50px)"></i><span>Birch<small>natural</small></span></div>
+      <div class="sw"><i style="background:repeating-linear-gradient(90deg,#e3c896 0 18px,#d6ba86 18px 20px,#e7cd9c 20px 44px)"></i><span>Pine<small>natural</small></span></div>
+      <div class="sw"><i style="background:repeating-linear-gradient(90deg,#7a5536 0 18px,#6b4a2e 18px 20px,#805a3a 20px 44px)"></i><span>Pine<small>walnut stain</small></span></div>
+      <div class="sw"><i style="background:repeating-linear-gradient(0deg,#c49a63 0 15px,#a8824f 15px 16px)"></i><span>Oak boards<small>natural</small></span></div>
+      <div class="sw"><i style="background:linear-gradient(115deg,#efece6 0 40%,#d8d4cc 41% 43%,#efece6 44% 70%,#cfcac1 71% 72%,#efece6 73%)"></i><span>Marble<small>fixed</small></span></div>
+      <div class="sw"><i style="background:#a5553f;background-image:linear-gradient(#d8cfc3 2px,transparent 2px),linear-gradient(90deg,#d8cfc3 2px,transparent 2px);background-size:30px 13px"></i><span>Brick<small>fixed</small></span></div>
+      <div class="sw"><i style="background:#a9a8a3"></i><span>Concrete<small>fixed</small></span></div>
+      <div class="sw"><i style="background:linear-gradient(135deg,#d7e6ea,#a9c4cc)"></i><span>Glass<small>clear</small></span></div>
+    </div>
+
+    <dl class="schedule">
+      <div><dt>Fixtures</dt><dd>Power and data outlets, light switches, thermostats, smoke detectors, downlights, recessed tube lights, LED strips in diffuser channels, pendants, air vents.</dd></div>
+      <div><dt>Furniture</dt><dd>A starter catalogue of 43 resizable pieces: sofas, glass and marble coffee tables, a kitchen island with stools, fridge, range, a stacked washer and dryer, beds, cars. Simple shapes, for now.</dd></div>
+      <div><dt>Share</dt><dd>One click copies a link that opens your house in a browser, on a phone too. The house travels inside the link itself, so nothing is uploaded and there's no account.</dd></div>
+      <div><dt>Your files</dt><dd>Projects are plain, readable JSON on your own disk. Metric or feet and inches.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section id="get">
+  <div class="wrap">
+    <div class="get">
+      <div>
+        <div class="mono">Get Lintel</div>
+        <h2>Open it now, or <em>take it home</em>.</h2>
+        <p class="sub">The browser version runs the whole editor on a sample house. The desktop app opens and saves your own projects.</p>
+        <p style="margin:26px 0 0"><a class="btn blue" href="app/">Open it in your browser</a></p>
+        <p class="fine">Needs a browser with WebGPU: recent Chrome, Edge or Safari.</p>
+      </div>
+      <div class="dl" id="dl">
+        <a class="row" data-os="mac" href="https://github.com/bendechrai/lintel/releases/download/latest/lintel-macos-arm64.tar.gz"><div><b>macOS</b><small>Apple silicon</small></div><span>.tar.gz</span></a>
+        <a class="row" data-os="win" href="https://github.com/bendechrai/lintel/releases/download/latest/lintel-windows-x86_64.zip"><div><b>Windows</b><small>64-bit</small></div><span>.zip</span></a>
+        <a class="row" data-os="linux" href="https://github.com/bendechrai/lintel/releases/download/latest/lintel-linux-x86_64.tar.gz"><div><b>Linux</b><small>x86-64</small></div><span>.tar.gz</span></a>
+        <p class="fine">Early builds of the latest commit, not yet signed. On macOS run <span style="font-family:var(--mono)">xattr -d com.apple.quarantine lintel</span> first; on Windows choose “More info”, then “Run anyway”. Or <a href="https://github.com/bendechrai/lintel#run-it-from-source">build it from source</a>.</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Lintel is free and open source under the MIT licence.</span>
+    <a href="https://github.com/bendechrai/lintel">Source on GitHub</a>
+    <a href="https://github.com/bendechrai/lintel/issues">Report a problem</a>
+    <span>Built in Rust on <a href="https://github.com/anomalyco/rune">Rune</a>.</span>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // The seven renders: clock time, how night-like the page is, and a caption.
+  const frames = [
+    { h: 5.75, night: .55, say: 'First light from the north-east' },
+    { h: 8, night: 0, say: 'Morning sun from the east' },
+    { h: 11, night: 0, say: 'Late morning' },
+    { h: 14, night: 0, say: 'Afternoon sun from the west' },
+    { h: 17, night: 0, say: 'Low sun, long shadows' },
+    { h: 19.4, night: .5, say: 'The last of the sun' },
+    { h: 21.5, night: 1, say: 'Night: lit by its own lamps' },
+  ];
+  const stage = document.getElementById('stage'), slider = document.getElementById('time');
+  const clock = document.getElementById('clock'), what = document.getElementById('what');
+  const first = stage.querySelector('img');
+  const imgs = frames.map((_, i) => {
+    if (i === 3) return first;
+    const im = new Image();
+    im.alt = ''; im.decoding = 'async'; im.src = `img/t${i}.jpg`;
+    stage.insertBefore(im, first.nextSibling);
+    return im;
+  });
+  // Later frames must stack above earlier ones for the crossfade.
+  imgs.forEach(im => stage.insertBefore(im, stage.querySelector('.tag')));
+
+  const day = { paper: [244, 240, 230], ink: [27, 29, 33], dim: [106, 111, 120], line: [217, 211, 196], card: [251, 249, 243] };
+  const night = { paper: [15, 17, 24], ink: [236, 232, 222], dim: [150, 154, 165], line: [48, 52, 64], card: [24, 27, 36] };
+  const root = document.documentElement.style;
+  function paint(v) {
+    const i = Math.min(Math.floor(v), frames.length - 2), f = v - i;
+    imgs.forEach((im, k) => im.style.opacity = k <= i ? 1 : k === i + 1 ? f : 0);
+    const h = frames[i].h + (frames[i + 1].h - frames[i].h) * f;
+    const m = Math.round(h * 60);
+    clock.textContent = String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    what.textContent = frames[Math.round(v)].say;
+    const n = frames[i].night + (frames[i + 1].night - frames[i].night) * f;
+    for (const key in day) root.setProperty('--' + key, 'rgb(' + day[key].map((c, j) => Math.round(c + (night[key][j] - c) * n)).join(',') + ')');
+    root.setProperty('--grid', `rgba(${n > .5 ? '140,160,255' : '36,80,216'}, ${.07 - .03 * n})`);
+    root.setProperty('--blue', n > .5 ? '#7d9bff' : '#2450d8');
+  }
+  // Drift through the day until someone takes the sun themselves.
+  let auto = !matchMedia('(prefers-reduced-motion: reduce)').matches, t0 = null;
+  const stop = () => auto = false;
+  ['pointerdown', 'keydown', 'input'].forEach(e => slider.addEventListener(e, stop));
+  slider.addEventListener('input', () => paint(+slider.value));
+  function tick(t) {
+    if (!auto) return;
+    if (t0 === null) t0 = t;
+    // 3 → 6 → 0 → 3 over about forty seconds, easing at the ends.
+    const phase = ((t - t0) / 40000) % 1;
+    const v = 3 + 3 * Math.sin(phase * 2 * Math.PI);
+    slider.value = v; paint(v);
+    requestAnimationFrame(tick);
+  }
+  paint(3);
+  new IntersectionObserver(([e]) => { if (e.isIntersecting && auto) requestAnimationFrame(tick); }, { threshold: .3 }).observe(stage);
+
+  // The plan draws itself when it scrolls into view.
+  const sheet = document.getElementById('sheet');
+  new IntersectionObserver(([e], o) => { if (e.isIntersecting) { sheet.classList.add('on'); o.disconnect(); } }, { threshold: .35 }).observe(sheet);
+
+  // Point at the download for this machine.
+  const ua = navigator.userAgent, os = /Mac/.test(ua) ? 'mac' : /Win/.test(ua) ? 'win' : /Linux|X11/.test(ua) && !/Android/.test(ua) ? 'linux' : null;
+  const mine = os && document.querySelector(`#dl [data-os=${os}]`);
+  if (mine) {
+    mine.classList.add('you');
+    mine.parentNode.prepend(mine);
+    const hero = document.getElementById('hero-dl');
+    hero.textContent = 'Download for ' + mine.querySelector('b').textContent;
+    hero.href = mine.href;
+  }
+})();
+</script>
+</body>
+</html>

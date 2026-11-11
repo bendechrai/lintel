@@ -10,7 +10,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use crate::model::Project;
 
 /// Where the browser build is published.
-pub const PAGE: &str = "https://bendechrai.github.io/lintel/";
+pub const PAGE: &str = "https://bendechrai.github.io/lintel/app/";
 
 /// The project packed into text that is safe in a link.
 pub fn encode(project: &Project) -> Result<String, String> {

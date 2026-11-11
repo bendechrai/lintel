@@ -58,7 +58,8 @@ Builds of the latest commit for Linux, macOS (Apple silicon) and Windows are on 
 unsigned. On macOS, clear the quarantine flag first: `xattr -d com.apple.quarantine lintel`.
 On Windows, choose "More info" then "Run anyway" when SmartScreen asks.
 
-Or try it in a browser with WebGPU: <https://bendechrai.github.io/lintel/>.
+Or try it in a browser with WebGPU: <https://bendechrai.github.io/lintel/app/>. The site's
+front page is <https://bendechrai.github.io/lintel/>.
 
 ## Run it from source
 
@@ -135,7 +136,7 @@ characters), so nothing is uploaded and there is no account. A narrow screen get
 plan, side and 3D views, levels, and lifting the roof off, without the editing panels.
 
 The page also opens a project file from an address:
-`https://bendechrai.github.io/lintel/?project=<url of a .lintel.json>` (the host must allow
+`https://bendechrai.github.io/lintel/app/?project=<url of a .lintel.json>` (the host must allow
 cross-origin reads, as a raw GitHub or gist link does).
 
 The browser needs WebGPU (recent Chrome, Edge and Safari). To build the page yourself:
@@ -148,7 +149,7 @@ scripts/web-build.sh
 python3 -m http.server 8000 -d target/web
 ```
 
-In headless Chromium the page loads linked and fetched projects and draws every view with no
+That serves the landing page (`site/`) at the root and the app under `app/`. In headless Chromium the page loads linked and fetched projects and draws every view with no
 GPU errors. Saving, opening files and the elevation fetch don't work in the browser yet.
 
 ## Not yet

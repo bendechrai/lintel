@@ -195,6 +195,8 @@ pub struct State {
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
     pub lux: LuxView,
+    /// Draw only the view, with no panels: for pictures of the house.
+    pub bare: bool,
     /// Decodes floor plan images; set once the window is up.
     pub images: Option<rune::ImageCache>,
     /// The floor plan images in use, by path.
@@ -266,6 +268,7 @@ impl State {
             open_groups: vec!["Living".into()],
             drag_last: [0.0, 0.0],
             linking: None,
+            bare: false,
             images: None,
             underlays: vec![],
             calibrate: None,

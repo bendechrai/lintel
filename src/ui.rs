@@ -545,6 +545,9 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         ViewMode::Plan => plan::view(s, size),
         _ => viewport(s, &th, size),
     };
+    if s.bare {
+        return col().key("root").w_full().h_full().fill(th.bg).child(row().key("body").w_full().grow(1.0).min_h(0.0).child(stage));
+    }
     // A phone gets the house to look at; editing needs the room a desktop window has.
     let narrow = cx.layout_size("root").is_some_and(|z| z[0] < 820.0);
     if narrow {
