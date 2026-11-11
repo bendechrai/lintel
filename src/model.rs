@@ -1,0 +1,645 @@
+//! The house model: everything a project file holds.
+//!
+//! Units are metres and radians. The plan is X east, Y north; Z is up. A level's `elevation` is
+//! the height of its finished floor above the site datum (z = 0), so a walk-out basement on a
+//! lot that falls away to the back is simply a level with a negative elevation and terrain that
+//! drops below it.
+//!
+//! Everything here is plain data with serde derives; geometry lives in `mesh.rs`, drawing in
+//! `plan.rs` and `gfx.rs`.
+
+use serde::{Deserialize, Serialize};
+
+pub type Id = u64;
+pub type P2 = [f32; 2];
+
+fn yes() -> bool {
+    true
+}
+
+// ---------------------------------------------------------------------------------------------
+// Project
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Project {
+    pub name: String,
+    #[serde(default)]
+    pub units: Units,
+    pub site: Site,
+    /// Bottom to top.
+    pub levels: Vec<Level>,
+    #[serde(default)]
+    pub roofs: Vec<Roof>,
+    /// Materials the project adds to the built-in library (`materials::library`).
+    #[serde(default)]
+    pub materials: Vec<crate::materials::Material>,
+    /// Next id to hand out. Ids are unique across the whole project.
+    pub next_id: Id,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Units {
+    #[default]
+    Metric,
+    Imperial,
+}
+
+impl Project {
+    pub fn id(&mut self) -> Id {
+        self.next_id += 1;
+        self.next_id
+    }
+
+    pub fn level(&self, id: Id) -> Option<&Level> {
+        self.levels.iter().find(|l| l.id == id)
+    }
+
+    pub fn level_mut(&mut self, id: Id) -> Option<&mut Level> {
+        self.levels.iter_mut().find(|l| l.id == id)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Materials on surfaces
+
+/// A surface finish: a material from the library by id, plus an optional colour.
+///
+/// What the colour means depends on the material (`materials::Tint`): the paint colour of a
+/// painted surface, a stain over a timber, or nothing at all for a material that is the colour
+/// it is (marble, concrete, brick).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Finish {
+    pub material: String,
+    /// sRGB, 0..1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[f32; 3]>,
+}
+
+impl Finish {
+    pub fn of(material: &str) -> Finish {
+        Finish { material: material.into(), color: None }
+    }
+
+    pub fn colored(material: &str, color: [f32; 3]) -> Finish {
+        Finish { material: material.into(), color: Some(color) }
+    }
+
+    /// `#rrggbb` paint.
+    pub fn paint(hex: u32) -> Finish {
+        Finish::colored("paint", rgb(hex))
+    }
+}
+
+pub fn rgb(hex: u32) -> [f32; 3] {
+    [((hex >> 16) & 255) as f32 / 255.0, ((hex >> 8) & 255) as f32 / 255.0, (hex & 255) as f32 / 255.0]
+}
+
+// ---------------------------------------------------------------------------------------------
+// Site and terrain
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Site {
+    pub terrain: Terrain,
+    /// Driveways, paths, patios, lawns, garden beds: polygons draped over the terrain.
+    #[serde(default)]
+    pub patches: Vec<Patch>,
+    /// Where the plan origin is on Earth, when known (terrain fetched from an elevation service).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geo: Option<Geo>,
+    /// Compass bearing of the plan's +Y axis, in degrees clockwise from true north.
+    #[serde(default)]
+    pub north: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Geo {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+/// A regular grid of ground heights. `heights[row * cols + col]` is the ground at
+/// `origin + [col * spacing, row * spacing]`, relative to the site datum.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Terrain {
+    pub origin: P2,
+    pub spacing: f32,
+    pub cols: usize,
+    pub rows: usize,
+    pub heights: Vec<f32>,
+    #[serde(default = "Terrain::default_finish")]
+    pub finish: Finish,
+    /// Where the heights came from, shown in the inspector ("Open Topo Data ned10m", "slope").
+    #[serde(default)]
+    pub source: String,
+}
+
+impl Terrain {
+    fn default_finish() -> Finish {
+        Finish::of("grass")
+    }
+
+    /// Flat ground at the datum.
+    pub fn flat(origin: P2, size: P2, spacing: f32) -> Terrain {
+        Terrain::sloped(origin, size, spacing, 0.0, 0.0, [0.0, 0.0])
+    }
+
+    /// A plane through `pivot` at z = 0 that falls `grade` metres per metre toward `bearing`
+    /// (radians, measured from +X toward +Y: `PI / 2` falls to the north).
+    pub fn sloped(origin: P2, size: P2, spacing: f32, bearing: f32, grade: f32, pivot: P2) -> Terrain {
+        let cols = (size[0] / spacing).ceil() as usize + 1;
+        let rows = (size[1] / spacing).ceil() as usize + 1;
+        let (s, c) = bearing.sin_cos();
+        let mut heights = Vec::with_capacity(cols * rows);
+        for r in 0..rows {
+            for q in 0..cols {
+                let x = origin[0] + q as f32 * spacing - pivot[0];
+                let y = origin[1] + r as f32 * spacing - pivot[1];
+                heights.push(-(x * c + y * s) * grade);
+            }
+        }
+        Terrain { origin, spacing, cols, rows, heights, finish: Terrain::default_finish(), source: "slope".into() }
+    }
+
+    pub fn size(&self) -> P2 {
+        [(self.cols.max(1) - 1) as f32 * self.spacing, (self.rows.max(1) - 1) as f32 * self.spacing]
+    }
+
+    /// Ground height at a plan point, bilinear between grid posts, clamped at the edges.
+    pub fn height(&self, p: P2) -> f32 {
+        if self.cols < 2 || self.rows < 2 || self.heights.len() < self.cols * self.rows {
+            return 0.0;
+        }
+        let fx = ((p[0] - self.origin[0]) / self.spacing).clamp(0.0, (self.cols - 1) as f32);
+        let fy = ((p[1] - self.origin[1]) / self.spacing).clamp(0.0, (self.rows - 1) as f32);
+        let (x0, y0) = ((fx as usize).min(self.cols - 2), (fy as usize).min(self.rows - 2));
+        let (tx, ty) = (fx - x0 as f32, fy - y0 as f32);
+        let h = |x: usize, y: usize| self.heights[y * self.cols + x];
+        let a = h(x0, y0) + (h(x0 + 1, y0) - h(x0, y0)) * tx;
+        let b = h(x0, y0 + 1) + (h(x0 + 1, y0 + 1) - h(x0, y0 + 1)) * tx;
+        a + (b - a) * ty
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Patch {
+    pub id: Id,
+    pub name: String,
+    pub outline: Vec<P2>,
+    pub finish: Finish,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Levels
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Level {
+    pub id: Id,
+    pub name: String,
+    /// Finished floor height above the site datum.
+    pub elevation: f32,
+    /// Floor to ceiling, the default for rooms and walls on this level.
+    pub height: f32,
+    /// Floor structure thickness, below the finished floor.
+    pub slab: f32,
+    #[serde(default)]
+    pub walls: Vec<Wall>,
+    #[serde(default)]
+    pub rooms: Vec<Room>,
+    #[serde(default)]
+    pub stairs: Vec<Stair>,
+    #[serde(default)]
+    pub fixtures: Vec<Fixture>,
+    #[serde(default)]
+    pub furniture: Vec<Furniture>,
+    #[serde(default = "yes")]
+    pub visible: bool,
+}
+
+impl Level {
+    pub fn new(id: Id, name: &str, elevation: f32, height: f32) -> Level {
+        Level {
+            id,
+            name: name.into(),
+            elevation,
+            height,
+            slab: 0.3,
+            walls: vec![],
+            rooms: vec![],
+            stairs: vec![],
+            fixtures: vec![],
+            furniture: vec![],
+            visible: true,
+        }
+    }
+
+    pub fn wall(&self, id: Id) -> Option<&Wall> {
+        self.walls.iter().find(|w| w.id == id)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Walls and what goes in them
+
+/// A straight wall along the centre line `a → b`. Its *left* face is on the left when walking
+/// from `a` to `b`, its *right* face on the right.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Wall {
+    pub id: Id,
+    pub a: P2,
+    pub b: P2,
+    pub thickness: f32,
+    /// `None` runs to the level's ceiling height.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// Bottom of the wall above the level's floor (negative reaches below it, for a wall that
+    /// runs down to a footing on falling ground).
+    #[serde(default)]
+    pub base: f32,
+    pub left: Finish,
+    pub right: Finish,
+    #[serde(default)]
+    pub openings: Vec<Opening>,
+}
+
+impl Wall {
+    pub fn length(&self) -> f32 {
+        ((self.b[0] - self.a[0]).powi(2) + (self.b[1] - self.a[1]).powi(2)).sqrt()
+    }
+
+    /// Unit vector along the wall, and its left normal.
+    pub fn frame(&self) -> (P2, P2) {
+        let l = self.length().max(1e-6);
+        let d = [(self.b[0] - self.a[0]) / l, (self.b[1] - self.a[1]) / l];
+        (d, [-d[1], d[0]])
+    }
+
+    /// The plan point `along` metres from `a`, `across` metres to the left of the centre line.
+    pub fn point(&self, along: f32, across: f32) -> P2 {
+        let (d, n) = self.frame();
+        [self.a[0] + d[0] * along + n[0] * across, self.a[1] + d[1] * along + n[1] * across]
+    }
+}
+
+/// Anything that interrupts a wall: a door, a window, a cased opening, or a recess that only
+/// goes part of the way through.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Opening {
+    pub id: Id,
+    /// Distance from the wall's `a` end to the opening's centre.
+    pub at: f32,
+    pub width: f32,
+    pub height: f32,
+    /// Bottom of the opening above the level's floor: 0 for a door, ~0.9 for a window.
+    pub sill: f32,
+    pub kind: OpeningKind,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OpeningKind {
+    Door(Door),
+    Garage(GarageDoor),
+    Window(Window),
+    /// A hole with no door in it. `frame` cases it with a jamb and architrave.
+    Passage { frame: Option<Frame> },
+    /// A niche cut into one face, `depth` deep (less than the wall's thickness).
+    Recess { side: WallSide, depth: f32, finish: Finish },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WallSide {
+    Left,
+    Right,
+}
+
+/// The jamb lining an opening and the architrave (casing) around it on both faces.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Frame {
+    /// Jamb thickness: how far the lining stands into the opening.
+    pub jamb: f32,
+    /// Architrave width on the wall face. 0 for none.
+    pub casing: f32,
+    pub finish: Finish,
+}
+
+impl Default for Frame {
+    fn default() -> Frame {
+        Frame { jamb: 0.03, casing: 0.07, finish: Finish::paint(0xf4f2ec) }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Door {
+    pub style: DoorStyle,
+    /// Which jamb the hinges (or the fixed panel) are on, seen from the wall's left side.
+    pub hinge: Hinge,
+    /// Which face the leaf swings toward.
+    pub swing: WallSide,
+    /// 0 closed … 1 fully open (90° for a hinged leaf), as drawn in 3D.
+    #[serde(default)]
+    pub open: f32,
+    pub leaf: Finish,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<Frame>,
+    /// Fraction of the leaf that is glazed, 0..1 (a French or patio door).
+    #[serde(default)]
+    pub glazing: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DoorStyle {
+    Hinged,
+    /// Two hinged leaves meeting in the middle.
+    Double,
+    /// A leaf that slides across the face of a fixed panel (patio door).
+    Sliding,
+    /// Slides into the wall.
+    Pocket,
+    Bifold,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Hinge {
+    /// Nearer the wall's `a` end.
+    Start,
+    /// Nearer the wall's `b` end.
+    End,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GarageDoor {
+    pub style: GarageStyle,
+    /// The face the door retracts toward (the inside of the garage).
+    pub inside: WallSide,
+    /// 0 closed … 1 fully open.
+    #[serde(default)]
+    pub open: f32,
+    /// Horizontal panels in a sectional door.
+    #[serde(default = "GarageDoor::default_panels")]
+    pub panels: u32,
+    pub finish: Finish,
+}
+
+impl GarageDoor {
+    fn default_panels() -> u32 {
+        4
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GarageStyle {
+    /// Hinged panels that ride tracks up and back under the ceiling.
+    Sectional,
+    /// A corrugated curtain that winds onto a drum above the opening.
+    Roller,
+    /// One rigid panel that tilts up and back.
+    Tilt,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Window {
+    pub style: WindowStyle,
+    pub frame: Finish,
+    /// Frame member width on the face.
+    #[serde(default = "Window::default_frame_width")]
+    pub frame_width: f32,
+    /// Panes across and up, for fixed and picture windows divided by mullions or glazing bars.
+    #[serde(default = "Window::one")]
+    pub cols: u32,
+    #[serde(default = "Window::one")]
+    pub rows: u32,
+    /// Architrave around the opening, inside and out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub casing: Option<Frame>,
+}
+
+impl Window {
+    fn default_frame_width() -> f32 {
+        0.05
+    }
+
+    fn one() -> u32 {
+        1
+    }
+
+    pub fn new(style: WindowStyle) -> Window {
+        Window { style, frame: Finish::paint(0xf4f2ec), frame_width: 0.05, cols: 1, rows: 1, casing: None }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowStyle {
+    Fixed,
+    /// Hinged at the side.
+    Casement,
+    /// Hinged at the top.
+    Awning,
+    /// Two sashes, one above the other; the lower slides up.
+    DoubleHung,
+    /// Two sashes side by side.
+    Sliding,
+    /// Horizontal glass blades.
+    Louvre,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rooms, stairs
+
+/// A floor area with its own floor and ceiling. Rooms make the slabs: where a level has no room
+/// there is no floor, which is how a stairwell or a double-height void is left open.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Room {
+    pub id: Id,
+    pub name: String,
+    pub outline: Vec<P2>,
+    pub floor: Finish,
+    pub ceiling: Finish,
+    /// `None` uses the level's height (a corridor with a dropped ceiling sets its own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ceiling_height: Option<f32>,
+    /// Finished floor above the level's (a sunken lounge is negative, a garage slab often is).
+    #[serde(default)]
+    pub floor_offset: f32,
+    /// False for a deck, a porch or a carport: a floor with nothing over it.
+    #[serde(default = "yes")]
+    pub has_ceiling: bool,
+}
+
+/// A straight flight. It starts at `at` on this level's floor and climbs `rise` metres toward
+/// `direction` over `run` metres.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Stair {
+    pub id: Id,
+    /// Centre of the bottom edge.
+    pub at: P2,
+    /// Radians from +X toward +Y.
+    pub direction: f32,
+    pub width: f32,
+    pub run: f32,
+    pub rise: f32,
+    pub steps: u32,
+    pub tread: Finish,
+    /// Closed risers and a solid underside, or open treads.
+    #[serde(default = "yes")]
+    pub closed: bool,
+    #[serde(default)]
+    pub railing: Railing,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Railing {
+    #[default]
+    None,
+    Left,
+    Right,
+    Both,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fixtures: electrical, lighting, safety, air
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Fixture {
+    pub id: Id,
+    pub kind: FixtureKind,
+    pub mount: Mount,
+    #[serde(default)]
+    pub label: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "on", rename_all = "snake_case")]
+pub enum Mount {
+    /// On a wall face: `at` metres from the wall's `a` end, `height` to the fixture's centre
+    /// above the level's floor.
+    Wall { wall: Id, side: WallSide, at: f32, height: f32 },
+    /// On the ceiling of whatever room is at `at`; `turn` rotates it (radians).
+    Ceiling { at: P2, turn: f32 },
+    /// On the floor.
+    Floor { at: P2, turn: f32 },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum FixtureKind {
+    /// A power outlet plate with this many sockets.
+    Outlet { gangs: u32 },
+    /// A light switch plate with this many rockers.
+    Switch { gangs: u32 },
+    SmokeDetector,
+    /// A round recessed downlight.
+    Downlight { diameter: f32 },
+    /// A linear light recessed into the ceiling.
+    TubeLight { length: f32, width: f32 },
+    /// A surface light on a wall or ceiling.
+    Surface { diameter: f32 },
+    /// A hanging light, `drop` metres below the ceiling.
+    Pendant { diameter: f32, drop: f32 },
+    /// A register or grille: HVAC supply or return, on a wall, ceiling or floor.
+    Vent { width: f32, height: f32 },
+    Thermostat,
+    /// Data, TV or phone outlet.
+    Data,
+}
+
+impl FixtureKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            FixtureKind::Outlet { .. } => "Power outlet",
+            FixtureKind::Switch { .. } => "Light switch",
+            FixtureKind::SmokeDetector => "Smoke detector",
+            FixtureKind::Downlight { .. } => "Downlight",
+            FixtureKind::TubeLight { .. } => "Recessed tube light",
+            FixtureKind::Surface { .. } => "Surface light",
+            FixtureKind::Pendant { .. } => "Pendant light",
+            FixtureKind::Vent { .. } => "Air vent",
+            FixtureKind::Thermostat => "Thermostat",
+            FixtureKind::Data => "Data outlet",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Furniture and appliances
+
+/// A piece from the catalogue (`catalog.rs`), placed on a level's floor.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Furniture {
+    pub id: Id,
+    /// Catalogue key: `"sofa"`, `"fridge"`, `"kitchen_island"` …
+    pub kind: String,
+    #[serde(default)]
+    pub name: String,
+    /// Centre of the footprint.
+    pub at: P2,
+    /// Radians, counter-clockwise from the piece facing -Y (its front toward the bottom of the plan).
+    pub turn: f32,
+    /// Width (across the front), depth, height.
+    pub size: [f32; 3],
+    /// Height of its underside above the floor (a wall cabinet, a wall-mounted TV).
+    #[serde(default)]
+    pub lift: f32,
+    /// The main finish (upholstery, carcass, body) and the secondary one (legs, benchtop, trim).
+    pub finish: Finish,
+    pub accent: Finish,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Roofs
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Roof {
+    pub id: Id,
+    pub name: String,
+    pub shape: RoofShape,
+    /// Centre of the rectangle the roof covers, at the wall line (overhang is added outside it).
+    pub center: P2,
+    /// Size along the ridge and across it.
+    pub size: P2,
+    /// Rotation of the ridge from +X, radians.
+    pub turn: f32,
+    /// Height of the eaves (top of the wall plate) above the site datum.
+    pub base: f32,
+    /// Rise over run: 0.5 is a 6:12 roof (26.6°).
+    pub pitch: f32,
+    pub overhang: f32,
+    pub thickness: f32,
+    pub finish: Finish,
+    /// The gable-end walls a gable or shed roof leaves open.
+    pub gable: Finish,
+    #[serde(default = "yes")]
+    pub visible: bool,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RoofShape {
+    Flat,
+    /// One plane, low along the -across edge and high along the +across edge.
+    Shed,
+    Gable,
+    Hip,
+}
+
+// ---------------------------------------------------------------------------------------------
+// Selection
+
+/// Something the editor can point at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Pick {
+    Wall(Id),
+    /// Wall id, opening id.
+    Opening(Id, Id),
+    Room(Id),
+    Stair(Id),
+    Fixture(Id),
+    Furniture(Id),
+    Roof(Id),
+    Patch(Id),
+}
