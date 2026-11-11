@@ -305,3 +305,39 @@ fn a_phone_sized_window_shows_the_house_without_the_editing_panels() {
     press(&mut rt, &format!("top-{main}"));
     assert_eq!(rt.state.options.top_level, Some(main));
 }
+
+#[test]
+fn a_floor_plan_image_is_laid_under_the_plan_and_scaled_from_a_known_length() {
+    let mut rt = app(sample::blank());
+    // A 400 × 200 px image stands in for a scanned plan.
+    let waker: rune::runtime::Waker = std::sync::Arc::new(|| {});
+    let cache = rune::ImageCache::new(waker);
+    let image = cache.rgba(400, 200, vec![200u8; 400 * 200 * 4]);
+    image.wait().unwrap();
+    rt.update(|s, _| {
+        s.underlays.push(("plan.png".into(), image.clone()));
+        let level = s.level;
+        s.edit("", |p| p.level_mut(level).unwrap().underlay = Some(Underlay { path: "plan.png".into(), at: [-2.0, -1.0], scale: 0.01, turn: 0.0, opacity: 0.6, visible: true }));
+    });
+    settle(&mut rt);
+    // At 1 cm a pixel it is 4 m × 2 m on the plan, with its bottom-left corner at (-2, -1).
+    let ([x, y, w, h], _) = rt.presented("underlay").expect("the image is on the plan");
+    let zoom = rt.state.plan.zoom;
+    assert!((w - 4.0 * zoom).abs() < 1.0 && (h - 2.0 * zoom).abs() < 1.0, "{w} × {h} at {zoom} pt/m");
+    let corner = on_plan(&rt, [-2.0, -1.0]);
+    assert!((x - corner.0).abs() < 1.0 && (y + h - corner.1).abs() < 1.0);
+
+    // Set its scale: drag along the image's bottom edge (4 m as it stands), and say it is 10 m.
+    press(&mut rt, "underlay-calibrate");
+    assert_eq!(rt.state.tool, Tool::Calibrate);
+    let (a, b) = (on_plan(&rt, [-2.0, -1.0]), on_plan(&rt, [2.0, -1.0]));
+    drag(&mut rt, a, b);
+    let (p, q) = rt.state.calibrate.expect("the line is waiting for its length");
+    assert!((lintel::geom::dist(p, q) - 4.0).abs() < 0.05);
+    rt.update(|s, _| s.apply_calibration(10.0));
+    let u = rt.state.active().unwrap().underlay.clone().unwrap();
+    assert!((u.scale - 0.025).abs() < 4e-4, "{}", u.scale);
+    // The end the line started from stays where it was.
+    assert!((u.at[0] + 2.0).abs() < 0.05 && (u.at[1] + 1.0).abs() < 0.05, "{:?}", u.at);
+    assert!(rt.state.calibrate.is_none());
+}

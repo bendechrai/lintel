@@ -119,6 +119,14 @@ target/release/lintel --snap out.png --scene dollhouse --size 1440x900
 | `geo.rs`, `solar.rs` | Elevation services; where the sun is |
 | `lux.rs` | Light levels: a small path tracer |
 
+## Trace an existing plan
+
+Under **Floor plan to trace** in the project panel, load a scan or photo of drawings you
+already have (PNG, JPEG, WebP or SVG). It lies under the active level, faded. Press **Set its
+scale**, drag a line along anything whose real length you know, and type that length: the
+image is rescaled to match. Then draw walls over it. The project stores where the image file
+is, not the picture, so a shared link doesn't carry it.
+
 ## Share a house as a link
 
 **Share link** copies an address that opens the house in a browser, on a phone too. The

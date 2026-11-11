@@ -101,6 +101,8 @@ fn init() -> State {
 }
 
 fn setup(s: &mut State, waker: rune::runtime::Waker) {
+    s.images = Some(rune::ImageCache::new(waker.clone()));
+    s.load_underlays();
     s.geo.request.set_waker(waker.clone());
     s.lux.request.set_waker(waker.clone());
     #[cfg(target_arch = "wasm32")]
@@ -242,6 +244,17 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.set_options(|o| o.top_level = main);
         s.camera.pitch = 0.95;
         s.camera.distance *= 0.8;
+    }),
+    ("trace", |s| {
+        s.replace_project(sample::blank(), None);
+        let level = s.level;
+        s.edit("", |p| {
+            if let Some(l) = p.level_mut(level) {
+                l.underlay = Some(crate::model::Underlay { path: "docs/plan.png".into(), at: [-9.0, -6.0], scale: 0.0125, turn: 0.0, opacity: 0.55, visible: true });
+            }
+        });
+        s.load_underlays();
+        s.set_tool(Tool::Wall);
     }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];

@@ -672,6 +672,97 @@ fn sun_rows(s: &State, th: &Th) -> Vec<El> {
     v
 }
 
+fn underlay_mut(p: &mut Project, level: Id) -> Option<&mut Underlay> {
+    p.level_mut(level)?.underlay.as_mut()
+}
+
+/// The floor plan image under the active level.
+fn underlay_rows(s: &State, th: &Th) -> Vec<El> {
+    let level = s.level;
+    let mut v = vec![section(th, "Floor plan to trace")];
+    let Some(u) = s.active().and_then(|l| l.underlay.as_ref()) else {
+        v.push(text("Lay a scan or photo of existing plans under this level and draw over it.").font(SMALL).color(th.dim).wrap());
+        v.push(row().w_full().mt(2.0).child(button(th, "underlay-load", "Load an image…", false).on_press_tx(|_: &mut State, tx: &mut Tx| {
+            let options = rune::FileDialogOptions { title: "Choose a floor plan image".into(), ..Default::default() }.filter("Images", &["png", "jpg", "jpeg", "webp", "svg"]);
+            tx.open_file(options, |s: &mut State, result, _| match result {
+                Ok(Some(path)) => s.set_underlay(path.to_string_lossy().into_owned()),
+                Ok(None) => {}
+                Err(e) => s.status = format!("Couldn't show the Open dialog ({e})."),
+            });
+        })));
+        return v;
+    };
+    let file = std::path::Path::new(&u.path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| u.path.clone());
+    let image = s.underlay_image(&u.path);
+    let pixels = image.and_then(|i| i.size());
+    v.push(fact(th, "Image", match (pixels, image.and_then(|i| i.error())) {
+        (Some([w, h]), _) => format!("{file}, {w} × {h} px"),
+        (None, Some(_)) => format!("{file} couldn't be read"),
+        (None, None) => format!("{file} (loading)"),
+    }));
+    v.push(toggle(th, "Show", "underlay-show", u.visible, on_project("", move |p: &mut Project, on: bool| {
+        if let Some(u) = underlay_mut(p, level) {
+            u.visible = on
+        }
+    })));
+    v.push(num(s, th, "Opacity", "underlay-opacity", u.opacity, Fmt::Percent, 0.05, on_project("underlay-opacity", move |p: &mut Project, x: f32| {
+        if let Some(u) = underlay_mut(p, level) {
+            u.opacity = x.clamp(0.05, 1.0)
+        }
+    })));
+    if let Some((a, b)) = s.calibrate {
+        let measured = geom::dist(a, b);
+        v.push(num(s, th, "That line is really", "underlay-real", measured, Fmt::Length, units::snap_step(s.project.units), |s: &mut State, x: f32| s.apply_calibration(x)));
+        v.push(text("Type the real length of the line you drew (click the number). The image is rescaled to match.").font(SMALL).color(th.dim).wrap());
+    }
+    if let Some([w, _]) = pixels {
+        let px = w as f32;
+        v.push(len(s, th, "Image width", "underlay-width", px * u.scale, move |p, x| {
+            if let Some(u) = underlay_mut(p, level) {
+                u.scale = (x / px).clamp(1e-5, 10.0)
+            }
+        }));
+    }
+    v.push(len(s, th, "Corner X", "underlay-x", u.at[0], move |p, x| {
+        if let Some(u) = underlay_mut(p, level) {
+            u.at[0] = x
+        }
+    }));
+    v.push(len(s, th, "Corner Y", "underlay-y", u.at[1], move |p, x| {
+        if let Some(u) = underlay_mut(p, level) {
+            u.at[1] = x
+        }
+    }));
+    v.push(num(s, th, "Turn", "underlay-turn", u.turn, Fmt::Degrees, 1f32.to_radians(), on_project("underlay-turn", move |p: &mut Project, x: f32| {
+        if let Some(u) = underlay_mut(p, level) {
+            u.turn = x
+        }
+    })));
+    v.push(
+        row()
+            .w_full()
+            .gap(6.0)
+            .mt(4.0)
+            .flex_wrap()
+            .child(button(th, "underlay-calibrate", "Set its scale", s.tool == Tool::Calibrate).on_press(|s: &mut State| {
+                if s.view != crate::app::ViewMode::Plan {
+                    s.set_view(crate::app::ViewMode::Plan);
+                }
+                s.calibrate = None;
+                s.set_tool(Tool::Calibrate)
+            }))
+            .child(button(th, "underlay-remove", "Remove", false).on_press(move |s: &mut State| {
+                s.calibrate = None;
+                s.edit("", |p| {
+                    if let Some(l) = p.level_mut(level) {
+                        l.underlay = None
+                    }
+                })
+            })),
+    );
+    v
+}
+
 fn light_rows(s: &State, th: &Th) -> Vec<El> {
     let lux = &s.lux;
     let busy = lux.request.is_pending();
@@ -990,6 +1081,8 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
             .child(button(th, "level-add-below", "Add below", false).on_press(|s: &mut State| s.add_level(false)))
             .child(button(th, "level-remove", "Remove", false).on_press(move |s: &mut State| s.remove_level(level))),
     );
+
+    v.extend(underlay_rows(s, th));
 
     // The site.
     let t = &p.site.terrain;

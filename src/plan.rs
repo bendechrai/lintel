@@ -568,7 +568,7 @@ fn draw_tool_preview(d: &mut Draw, s: &State, level: &Level) {
                 d.line(a, b, (s.wall_thickness() * d.cam.zoom).max(2.0), ink.accent.alpha(0.5));
                 d.label(add(scale(add(a, b), 0.5), [0.0, d.px(16.0)]), units::length(geom::dist(a, b), d.units), SMALL, ink.accent);
             }
-            Tool::Stair => {
+            Tool::Stair | Tool::Calibrate => {
                 d.line(a, b, 2.0, ink.accent);
                 d.label(add(scale(add(a, b), 0.5), [0.0, d.px(14.0)]), units::length(geom::dist(a, b), d.units), SMALL, ink.accent);
             }
@@ -643,7 +643,9 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
     for r in &level.rooms {
         let selected = s.selected == Some(Pick::Room(r.id));
         let floor = srgb(lib.swatch(&r.floor));
-        d.fill(&r.outline, floor.mix(ink.paper, 0.5).alpha(if r.has_ceiling { 0.9 } else { 0.55 }));
+        // Over a floor plan image the floors go thin, so the drawing underneath shows.
+        let tracing = level.underlay.as_ref().is_some_and(|u| u.visible);
+        d.fill(&r.outline, floor.mix(ink.paper, 0.5).alpha(if tracing { 0.3 } else if r.has_ceiling { 0.9 } else { 0.55 }));
         if !r.has_ceiling {
             d.dashed_outline(&r.outline, 1.0, ink.line.alpha(0.7));
         }
@@ -741,6 +743,12 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
 
     draw_selection(&mut d, s, level);
     draw_tool_preview(&mut d, s, level);
+    if let Some((a, b)) = s.calibrate {
+        d.line(a, b, 2.0, ink.accent);
+        handle(&mut d, a);
+        handle(&mut d, b);
+        d.label(add(scale(add(a, b), 0.5), [0.0, d.px(14.0)]), format!("measures {}", units::length(geom::dist(a, b), d.units)), SMALL, ink.accent);
+    }
 
     // North arrow, top right.
     let north = s.project.site.north.to_radians();
@@ -756,16 +764,28 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
     (d.shape, d.labels)
 }
 
+/// The floor plan image under the active level, placed where the model says.
+fn underlay(s: &State, size: [f32; 2]) -> Option<El> {
+    let u = s.active()?.underlay.as_ref().filter(|u| u.visible)?;
+    let image = s.underlay_image(&u.path)?;
+    let [w, h] = image.size()?;
+    let (wm, hm) = (w as f32 * u.scale, h as f32 * u.scale);
+    // Rune turns an element about its centre, so place the centre.
+    let centre = s.plan.to_screen(add(u.at, geom::rotate([wm / 2.0, hm / 2.0], u.turn)), size);
+    let (ws, hs) = (wm * s.plan.zoom, hm * s.plan.zoom);
+    Some(el().key("underlay").absolute(centre[0] - ws / 2.0, centre[1] - hs / 2.0).size(ws, hs).rotate(-u.turn).opacity(u.opacity.clamp(0.05, 1.0)).pixels(image.pixels()).inert())
+}
+
 /// The plan canvas with its labels and handlers.
 pub fn view(s: &State, size: [f32; 2]) -> El {
     let ink = Ink::new(s.dark);
     let (shape, labels) = draw(s, size);
-    let drawing = canvas(shape)
+    let under = underlay(s, size);
+    let mut drawing = canvas(shape)
         .key("plan")
         .absolute(0.0, 0.0)
         .w_full()
         .h_full()
-        .fill(ink.paper)
         .focusable(true)
         .no_focus_ring()
         .on_layout(|s: &mut State, r| crate::edit::canvas_resized(s, [r[2], r[3]]))
@@ -773,9 +793,17 @@ pub fn view(s: &State, size: [f32; 2]) -> El {
         .on_wheel(crate::edit::plan_wheel)
         .on_magnify(crate::edit::plan_magnify)
         .on_pointer_move_local(crate::edit::plan_hover);
+    // With an image underneath, the paper is the wrapper's and the drawing is clear over it.
+    if under.is_none() {
+        drawing = drawing.fill(ink.paper);
+    }
     let labels = labels.into_iter().map(|l| {
         let w = 180.0;
         text(l.text).font(l.style).color(l.color).align(Align::Center).w(w).absolute(l.at[0] - w / 2.0, l.at[1] - l.style.size * 0.65).inert()
     });
-    el().key("plan-wrap").grow(1.0).h_full().min_w(0.0).clip_rounded(0.0).child(drawing).children(labels)
+    let mut wrap = el().key("plan-wrap").grow(1.0).h_full().min_w(0.0).clip_rounded(0.0).fill(ink.paper);
+    if let Some(under) = under {
+        wrap = wrap.child(under);
+    }
+    wrap.child(drawing).children(labels)
 }

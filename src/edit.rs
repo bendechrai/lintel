@@ -299,6 +299,12 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
     let big = hi[0] - lo[0] > 0.2 && hi[1] - lo[1] > 0.2;
     let tool = s.tool.clone();
     match tool {
+        Tool::Calibrate if geom::dist(a, b) * s.plan.zoom > 8.0 => {
+            s.calibrate = Some((a, b));
+            s.tool = Tool::Select;
+            s.select(None);
+            s.status = "Now type what that length really is, under “That line is really” on the right.".into();
+        }
         Tool::Wall if geom::dist(a, b) > 0.1 => {
             s.checkpoint("");
             let id = s.project.id();
@@ -486,6 +492,7 @@ pub fn plan_drag(s: &mut State, d: &mut Drag, tx: &mut Tx) {
                         }
                     }
                 }
+                Tool::Calibrate => s.drag = DragOp::Draw { a: raw, b: raw },
                 Tool::Wall | Tool::Room | Tool::Stair | Tool::Patch | Tool::Roof => {
                     let a = snap_point(s, raw, &[]);
                     s.drag = DragOp::Draw { a, b: a };
@@ -502,6 +509,7 @@ pub fn plan_drag(s: &mut State, d: &mut Drag, tx: &mut Tx) {
                 s.plan_moved = true;
                 s.plan.center = add(center, [-d.dx / s.plan.zoom, d.dy / s.plan.zoom]);
             }
+            DragOp::Draw { a, .. } if s.tool == Tool::Calibrate => s.drag = DragOp::Draw { a, b: raw },
             DragOp::Draw { a, .. } => {
                 let mut b = snap_point(s, raw, &[]);
                 if s.tool == Tool::Wall && !free {

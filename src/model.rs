@@ -262,6 +262,39 @@ pub struct Level {
     pub furniture: Vec<Furniture>,
     #[serde(default = "yes")]
     pub visible: bool,
+    /// A floor plan image laid under the plan to draw over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub underlay: Option<Underlay>,
+}
+
+/// An image under a level's plan: a scan or photo of existing drawings to trace.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Underlay {
+    /// The image file. The project holds only where it is, not the picture.
+    pub path: String,
+    /// Where the image's bottom-left corner sits on the plan.
+    pub at: P2,
+    /// Metres on the plan per pixel of the image.
+    pub scale: f32,
+    /// Radians, counter-clockwise about the bottom-left corner.
+    #[serde(default)]
+    pub turn: f32,
+    pub opacity: f32,
+    #[serde(default = "yes")]
+    pub visible: bool,
+}
+
+impl Underlay {
+    /// Rescales the image about the plan point `fixed` so that a length that measured
+    /// `measured` on the plan becomes `real`.
+    pub fn calibrate(&mut self, fixed: P2, measured: f32, real: f32) {
+        if measured <= 1e-4 || real <= 1e-4 {
+            return;
+        }
+        let k = real / measured;
+        self.scale *= k;
+        self.at = [fixed[0] + (self.at[0] - fixed[0]) * k, fixed[1] + (self.at[1] - fixed[1]) * k];
+    }
 }
 
 impl Level {
@@ -278,6 +311,7 @@ impl Level {
             fixtures: vec![],
             furniture: vec![],
             visible: true,
+            underlay: None,
         }
     }
 

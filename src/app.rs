@@ -35,6 +35,8 @@ pub enum Tool {
     Furniture(String),
     Patch,
     Roof,
+    /// Drawing a line along a known length on the floor plan image, to set its scale.
+    Calibrate,
 }
 
 impl Tool {
@@ -49,6 +51,7 @@ impl Tool {
             Tool::Furniture(_) => "Click to place it. Press R to turn the selected piece.",
             Tool::Patch => "Drag a rectangle of ground to surface (a driveway, path or patio).",
             Tool::Roof => "Drag a rectangle over the walls the roof covers.",
+            Tool::Calibrate => "Drag a line along something on the image whose real length you know, then type that length.",
         }
     }
 }
@@ -192,6 +195,12 @@ pub struct State {
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
     pub lux: LuxView,
+    /// Decodes floor plan images; set once the window is up.
+    pub images: Option<rune::ImageCache>,
+    /// The floor plan images in use, by path.
+    pub underlays: Vec<(String, rune::Image)>,
+    /// A line drawn along a known length on the floor plan image, waiting for that length.
+    pub calibrate: Option<(P2, P2)>,
     /// The switch whose lights are being picked on the plan.
     pub linking: Option<Id>,
     /// Pointer travel at the last event of a viewport drag.
@@ -257,6 +266,9 @@ impl State {
             open_groups: vec!["Living".into()],
             drag_last: [0.0, 0.0],
             linking: None,
+            images: None,
+            underlays: vec![],
+            calibrate: None,
             lux: LuxView { settings: crate::lux::Settings::default(), request: rune::Latest::default(), levels: None, stale: false, show: false },
             camera: Camera::default(),
             side: Side::South,
@@ -369,6 +381,46 @@ impl State {
 
     // -----------------------------------------------------------------------------------------
     // Scene and cameras
+
+    /// Starts loading every floor plan image the project names that isn't loaded yet.
+    pub fn load_underlays(&mut self) {
+        let Some(cache) = &self.images else { return };
+        for path in self.project.levels.iter().filter_map(|l| l.underlay.as_ref()).map(|u| u.path.clone()) {
+            if !self.underlays.iter().any(|(p, _)| *p == path) {
+                let image = cache.file(&path, 1024.0, 1.0);
+                self.underlays.push((path, image));
+            }
+        }
+    }
+
+    pub fn underlay_image(&self, path: &str) -> Option<&rune::Image> {
+        self.underlays.iter().find(|(p, _)| p == path).map(|(_, i)| i)
+    }
+
+    /// Lays an image under the active level, a guess at 1 cm a pixel until it is calibrated.
+    pub fn set_underlay(&mut self, path: String) {
+        let level = self.level;
+        let corner = self.plan.to_model([40.0, self.canvas[1] - 40.0], self.canvas);
+        self.edit("", |p| {
+            if let Some(l) = p.level_mut(level) {
+                l.underlay = Some(Underlay { path, at: corner, scale: 0.01, turn: 0.0, opacity: 0.6, visible: true });
+            }
+        });
+        self.load_underlays();
+        self.status = "Image placed. Use “Set its scale” and drag along a length you know.".into();
+    }
+
+    /// The line drawn for calibration is really `real` metres long: rescale the image to fit.
+    pub fn apply_calibration(&mut self, real: f32) {
+        let Some((a, b)) = self.calibrate.take() else { return };
+        let level = self.level;
+        let measured = geom::dist(a, b);
+        self.edit("", |p| {
+            if let Some(u) = p.level_mut(level).and_then(|l| l.underlay.as_mut()) {
+                u.calibrate(a, measured, real);
+            }
+        });
+    }
 
     /// Starts calculating light levels for the project as it stands.
     pub fn calculate_light(&mut self) {
@@ -799,6 +851,10 @@ impl State {
         let (view, dark, canvas) = (self.view, self.dark, self.canvas);
         let status = path.as_ref().map(|p| format!("Opened {}", p.display())).unwrap_or_default();
         let mut next = State::new(project, path);
+        next.images = self.images.take();
+        next.lux.request = std::mem::take(&mut self.lux.request);
+        next.geo.request = std::mem::take(&mut self.geo.request);
+        next.load_underlays();
         next.dark = dark;
         next.canvas = canvas;
         next.fit_plan();
