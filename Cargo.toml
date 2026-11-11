@@ -6,14 +6,25 @@ license = "MIT"
 description = "Model your home: plans, elevations and a 3D render, for planning changes before you make them."
 rust-version = "1.99"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
-rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7", features = ["native-file-dialog"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7" }
 rune-kit = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-ureq = "2"
 bytemuck = { version = "1.25", features = ["derive"] }
 wgpu = { version = "~30.0.1", default-features = false, features = ["std", "wgsl"] }
+
+# Native only: file dialogs, and HTTP for the elevation services.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7", features = ["native-file-dialog"] }
+ureq = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7", features = ["webgl"] }
+wasm-bindgen = "0.2"
 
 # Rune draws through a wgpu-hal with one extra dx12 function; an app that builds Rune patches it too.
 [patch.crates-io]

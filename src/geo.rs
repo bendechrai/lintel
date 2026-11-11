@@ -69,6 +69,12 @@ pub fn parse_open_meteo(body: &str) -> Result<Vec<f64>, String> {
     list.iter().map(|e| e.as_f64().ok_or_else(|| "no elevation data for this place".to_string())).collect()
 }
 
+#[cfg(target_arch = "wasm32")]
+fn get(_url: &str) -> Result<String, String> {
+    Err("fetching ground heights isn't available in the browser yet".into())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn get(url: &str) -> Result<String, String> {
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).user_agent("lintel").build();
     agent.get(url).call().map_err(|e| e.to_string())?.into_string().map_err(|e| e.to_string())
