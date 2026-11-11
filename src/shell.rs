@@ -1,5 +1,6 @@
 //! The app's entry point, shared by the desktop binary and the browser build.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 
 use crate::app::{State, Tool, ViewMode};
@@ -8,6 +9,78 @@ use crate::model::Pick;
 use crate::{sample, ui};
 use rune::{AppSpec, Tx};
 
+/// The page's address and fetching, in the browser.
+#[cfg(target_arch = "wasm32")]
+mod web {
+    use std::cell::RefCell;
+
+    use wasm_bindgen::JsCast;
+
+    use crate::model::Project;
+
+    thread_local! {
+        static FETCHED: RefCell<Option<Result<Project, String>>> = const { RefCell::new(None) };
+    }
+
+    /// The part of the address after `#`, and the part after `?`.
+    pub fn address() -> (String, String) {
+        let location = web_sys::window().map(|w| w.location());
+        let part = |f: fn(&web_sys::Location) -> Result<String, wasm_bindgen::JsValue>| location.as_ref().and_then(|l| f(l).ok()).unwrap_or_default();
+        (part(web_sys::Location::hash), part(web_sys::Location::search))
+    }
+
+    async fn get(url: &str) -> Result<Project, String> {
+        let window = web_sys::window().ok_or("no window")?;
+        let failed = |_| format!("couldn't fetch {url}");
+        let response: web_sys::Response = wasm_bindgen_futures::JsFuture::from(window.fetch_with_str(url)).await.map_err(failed)?.dyn_into().map_err(failed)?;
+        if !response.ok() {
+            return Err(format!("{url} answered {}", response.status()));
+        }
+        let text = wasm_bindgen_futures::JsFuture::from(response.text().map_err(failed)?).await.map_err(failed)?;
+        serde_json::from_str(&text.as_string().unwrap_or_default()).map_err(|e| format!("{url} isn't a Lintel project: {e}"))
+    }
+
+    /// Fetches a project file, then wakes the app to take it.
+    pub fn fetch(url: String, waker: rune::runtime::Waker) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = get(&url).await;
+            FETCHED.with(|slot| *slot.borrow_mut() = Some(result));
+            waker();
+        });
+    }
+
+    pub fn take() -> Option<Result<Project, String>> {
+        FETCHED.with(|slot| slot.borrow_mut().take())
+    }
+
+    pub fn set_title(title: &str) {
+        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+            document.set_title(title);
+        }
+    }
+}
+
+/// A project opened from a link starts in 3D: most people following one want to look round.
+#[cfg(target_arch = "wasm32")]
+fn init() -> State {
+    let (fragment, _) = web::address();
+    match crate::share::from_fragment(&fragment) {
+        Some(Ok(project)) => {
+            web::set_title(&format!("{} · Lintel", project.name));
+            let mut s = State::new(project, None);
+            s.set_view(ViewMode::Model);
+            s
+        }
+        Some(Err(e)) => {
+            let mut s = State::new(sample::house(), None);
+            s.status = format!("Couldn't open the linked project: {e}. Showing the sample house.");
+            s
+        }
+        None => State::new(sample::house(), None),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn init() -> State {
     // The first argument that isn't one of Rune's tooling flags (or a flag's value) is a project.
     let file = std::env::args().skip(1).find(|a| a.ends_with(".json") && !a.starts_with("--"));
@@ -29,11 +102,32 @@ fn init() -> State {
 
 fn setup(s: &mut State, waker: rune::runtime::Waker) {
     s.geo.request.set_waker(waker.clone());
-    s.lux.request.set_waker(waker);
+    s.lux.request.set_waker(waker.clone());
+    #[cfg(target_arch = "wasm32")]
+    if let Some(url) = crate::share::from_query(&web::address().1) {
+        s.status = format!("Fetching {url}…");
+        web::fetch(url, waker);
+    }
+    let _ = waker;
 }
 
 /// Lands a fetched terrain.
 fn poll(s: &mut State, _: f64, _: &mut Tx) -> bool {
+    #[cfg(target_arch = "wasm32")]
+    let lit = match web::take() {
+        Some(Ok(project)) => {
+            web::set_title(&format!("{} · Lintel", project.name));
+            s.replace_project(project, None);
+            s.set_view(ViewMode::Model);
+            true
+        }
+        Some(Err(e)) => {
+            s.status = format!("{e}. Showing the sample house.");
+            true
+        }
+        None => s.land_light(),
+    };
+    #[cfg(not(target_arch = "wasm32"))]
     let lit = s.land_light();
     let Some(answer) = s.geo.request.take() else { return lit };
     match answer {

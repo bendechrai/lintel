@@ -16,6 +16,7 @@ pub mod model;
 pub mod plan;
 pub mod sample;
 pub mod scene;
+pub mod share;
 pub mod shell;
 pub mod solar;
 pub mod time;

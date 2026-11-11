@@ -1491,13 +1491,18 @@ checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 name = "lintel"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "bytemuck",
+ "js-sys",
+ "miniz_oxide 0.8.9",
  "rune",
  "rune-kit",
  "serde",
  "serde_json",
  "ureq",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
 ]
 

@@ -119,7 +119,18 @@ target/release/lintel --snap out.png --scene dollhouse --size 1440x900
 | `geo.rs`, `solar.rs` | Elevation services; where the sun is |
 | `lux.rs` | Light levels: a small path tracer |
 
-## In a browser (experimental)
+## Share a house as a link
+
+**Share link** copies an address that opens the house in a browser, on a phone too. The
+project travels inside the link itself, compressed (the sample house is about 9 000
+characters), so nothing is uploaded and there is no account. A narrow screen gets a viewer:
+plan, side and 3D views, levels, and lifting the roof off, without the editing panels.
+
+The page also opens a project file from an address:
+`https://bendechrai.github.io/lintel/?project=<url of a .lintel.json>` (the host must allow
+cross-origin reads, as a raw GitHub or gist link does).
+
+The browser needs WebGPU (recent Chrome, Edge and Safari). To build the page yourself:
 
 ```bash
 scripts/web-build.sh
@@ -129,9 +140,8 @@ scripts/web-build.sh
 python3 -m http.server 8000 -d target/web
 ```
 
-It needs a browser with WebGPU. In headless Chromium the build starts and submits frames in
-every view with no GPU errors; it has not been looked at on a real screen or a phone yet.
-Saving, opening and the elevation fetch don't work there.
+In headless Chromium the page loads linked and fetched projects and draws every view with no
+GPU errors. Saving, opening files and the elevation fetch don't work in the browser yet.
 
 ## Not yet
 

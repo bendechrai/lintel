@@ -48,9 +48,10 @@ Answered ones move to the bottom with the decision.
 
 ## New, from your answers
 
-19. **Shared link.** Is the link view-only (orbit, walk through, switch levels and lights), or
-    can viewers measure, comment or edit? Where is the project hosted: a file you upload
-    somewhere, or a service Lintel runs?
+19. **Shared link.** Built so the house travels inside the link (no upload, no account) and
+    a phone gets a viewer. Anyone with the link sees the whole model and can't change your
+    copy. Is that right, or do you want links that stay current as you edit (which needs
+    somewhere to host the project), comments, or measuring in the viewer?
 20. **Voice agent.** Whose model and key (your own Claude API key in settings)? Should it only
     fill in the model as you dictate measurements, or also answer questions about the house
     ("how much skirting do I need")? Push-to-talk or always listening?

@@ -43,6 +43,23 @@ pub fn save(s: &mut State, tx: &mut Tx, ask: bool) {
     });
 }
 
+/// Copies a link that opens this project in the browser.
+pub fn share(s: &mut State, tx: &mut Tx) {
+    s.commit_editing();
+    match crate::share::link(&s.project) {
+        Ok(link) => {
+            let size = link.len();
+            tx.copy(link);
+            s.status = if size > 60_000 {
+                format!("Link copied. It is {} thousand characters long, which some chat apps cut short: test it before relying on it.", size / 1000)
+            } else {
+                "Link copied: anyone who opens it sees this house in their browser. The house travels inside the link; nothing was uploaded.".to_string()
+            };
+        }
+        Err(e) => s.status = format!("Couldn't make a link: {e}"),
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Keys
 
@@ -152,6 +169,7 @@ fn top_bar(s: &State, th: &Th) -> El {
         .child(ghost(th, "new", "New", false).on_press(|s: &mut State| s.replace_project(crate::sample::blank(), None)))
         .child(ghost(th, "sample", "Sample", false).on_press(|s: &mut State| s.replace_project(crate::sample::house(), None)))
         .child(ghost(th, "open", "Open…", false).on_press_tx(open_dialog))
+        .child(ghost(th, "share", "Share link", false).on_press_tx(share))
         .child(button(th, "save", "Save", false).on_press_tx(|s: &mut State, tx: &mut Tx| save(s, tx, false)))
         .child(ghost(th, "theme", if s.dark { "Light" } else { "Dark" }, false).on_press(|s: &mut State| s.dark = !s.dark))
 }
@@ -489,6 +507,32 @@ fn status_bar(s: &State, th: &Th) -> El {
 
 // ---------------------------------------------------------------------------------------------
 
+/// The top bar on a narrow screen: the views and the levels, nothing to edit with.
+fn compact_bar(s: &State, th: &Th) -> El {
+    let views = [("Plan", ViewMode::Plan), ("Side", ViewMode::Elevation), ("3D", ViewMode::Model)];
+    let mut bar = row().key("compact").w_full().h(44.0).px(8.0).gap(4.0).center_y().fill(th.panel).border_sides([0.0, 0.0, 1.0, 0.0], th.border).scroll_x();
+    for (name, v) in views {
+        bar = bar.child(ghost(th, format!("view-{name}"), name, s.view == v).on_press(move |s: &mut State| s.set_view(v)));
+    }
+    bar = bar.child(rune::el().w(1.0).h(20.0).fill(th.border).mx(4.0));
+    if s.view == ViewMode::Model {
+        bar = bar.child(ghost(th, "top-all", "Whole", s.options.top_level.is_none()).on_press(|s: &mut State| s.set_options(|o| o.top_level = None)));
+        for l in &s.project.levels {
+            let id = l.id;
+            bar = bar.child(ghost(th, format!("top-{id}"), l.name.clone(), s.options.top_level == Some(id)).on_press(move |s: &mut State| s.set_options(|o| o.top_level = Some(id))));
+        }
+    } else {
+        for l in &s.project.levels {
+            let id = l.id;
+            bar = bar.child(ghost(th, format!("level-{id}"), l.name.clone(), id == s.level).on_press(move |s: &mut State| {
+                s.level = id;
+                s.selected = None;
+            }));
+        }
+    }
+    bar
+}
+
 pub fn view(s: &State, cx: &mut Cx<State>) -> El {
     let th = Th::new(s.dark);
     let size = match s.view {
@@ -501,6 +545,11 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         ViewMode::Plan => plan::view(s, size),
         _ => viewport(s, &th, size),
     };
+    // A phone gets the house to look at; editing needs the room a desktop window has.
+    let narrow = cx.layout_size("root").is_some_and(|z| z[0] < 820.0);
+    if narrow {
+        return col().key("root").w_full().h_full().fill(th.bg).child(compact_bar(s, &th)).child(row().key("body").w_full().grow(1.0).min_h(0.0).child(stage));
+    }
     col()
         .key("root")
         .w_full()

@@ -290,3 +290,18 @@ fn the_sun_follows_the_clock_and_the_plans_north() {
     rt.update(|s, _| s.edit("", |p| p.site.sun.hour = 23.0));
     assert!(rt.state.sun().altitude < 0.0);
 }
+
+#[test]
+fn a_phone_sized_window_shows_the_house_without_the_editing_panels() {
+    let mut rt = Runtime::new(State::new(sample::house(), None), ui::view, (390.0, 800.0), Env { system_dark: false, scale: 2.0 });
+    settle(&mut rt);
+    assert!(rt.find("tools").is_none() && rt.find("inspector").is_none(), "no tool panel or inspector");
+    press(&mut rt, "view-3D");
+    assert_eq!(rt.state.view, ViewMode::Model);
+    let ([_, _, w, h], _) = rt.presented("viewport").unwrap();
+    assert!(w > 380.0 && h > 700.0, "the view fills the screen: {w} × {h}");
+    // Lifting the roof off is one tap.
+    let main = rt.state.project.levels.last().unwrap().id;
+    press(&mut rt, &format!("top-{main}"));
+    assert_eq!(rt.state.options.top_level, Some(main));
+}
