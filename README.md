@@ -32,7 +32,16 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 - **Materials**: about 55 procedural surfaces. Paints take any colour, timbers keep their own
   colour and take a stain, and stone, brick and concrete are the colour they are.
 
-## Run it
+## Download
+
+Builds of the latest commit for Linux, macOS (Apple silicon) and Windows are on the
+[latest pre-release](https://github.com/bendechrai/lintel/releases/tag/latest). They are
+unsigned. On macOS, clear the quarantine flag first: `xattr -d com.apple.quarantine lintel`.
+On Windows, choose "More info" then "Run anyway" when SmartScreen asks.
+
+Or try it in a browser with WebGPU: <https://bendechrai.github.io/lintel/>.
+
+## Run it from source
 
 ```bash
 cargo run --release
