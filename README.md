@@ -90,6 +90,20 @@ target/release/lintel --snap out.png --scene dollhouse --size 1440x900
 | `app.rs` | Editor state, undo, files |
 | `geo.rs` | Elevation services |
 
+## In a browser (experimental)
+
+```bash
+scripts/web-build.sh
+```
+
+```bash
+python3 -m http.server 8000 -d target/web
+```
+
+It needs a browser with WebGPU. In headless Chromium the build starts and submits frames in
+every view with no GPU errors; it has not been looked at on a real screen or a phone yet.
+Saving, opening and the elevation fetch don't work there.
+
 ## Not yet
 
 L- and U-shaped stairs, dormers and valleys, wall editing in 3D, dimension lines, textures

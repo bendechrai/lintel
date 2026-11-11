@@ -23,7 +23,7 @@ rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41ef
 ureq = "2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7", features = ["webgl"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41efc05c485e60e4432c3e7" }
 wasm-bindgen = "0.2"
 
 # Rune draws through a wgpu-hal with one extra dx12 function; an app that builds Rune patches it too.
