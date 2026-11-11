@@ -59,10 +59,10 @@ pub fn build(project: &Project, options: &BuildOptions) -> Scene {
     let mut scene = Scene::default();
     let mut cx = Ctx { scene: &mut scene, lib: &lib };
 
-    // With a top level below the top of the house, the roof comes off and so does that
+    // With a top level chosen, the roof comes off and so does that
     // level's ceiling, to look down into it.
     let top = options.top_level.and_then(|id| project.levels.iter().position(|l| l.id == id));
-    let cut = top.is_some_and(|i| i + 1 < project.levels.len());
+    let cut = top.is_some();
     for (i, level) in project.levels.iter().enumerate() {
         if !level.visible || top.is_some_and(|t| i > t) {
             continue;

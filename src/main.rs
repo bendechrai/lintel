@@ -112,6 +112,6 @@ const SCENES: &[(&str, fn(&mut State))] = &[
 ];
 
 fn main() {
-    let spec = AppSpec::<State> { scenes: SCENES, min_size: Some((980.0, 600.0)), setup: Some(setup), poll: Some(poll), on_key: Some(ui::on_key), ..AppSpec::new("Lintel", (1440.0, 900.0), init, ui::view) };
+    let spec = AppSpec::<State> { scenes: SCENES, min_size: Some((1280.0, 720.0)), setup: Some(setup), poll: Some(poll), on_key: Some(ui::on_key), ..AppSpec::new("Lintel", (1440.0, 900.0), init, ui::view) };
     rune::App::new(spec).compositor(Gfx::default()).run();
 }

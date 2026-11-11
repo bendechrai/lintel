@@ -182,7 +182,7 @@ fn ortho(from: P2, p: P2) -> P2 {
 /// The opening a wall tool places, sized for `wall` (id 0, at 0: the caller sets both).
 pub fn default_opening(tool: &Tool, wall: &Wall) -> Option<Opening> {
     let trim = Finish::paint(0xf7f5f0);
-    let (width, height, sill, kind) = match tool {
+    let (width, height, sill, kind): (f32, f32, f32, OpeningKind) = match tool {
         Tool::Door => (
             0.82,
             2.04,

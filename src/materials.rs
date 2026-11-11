@@ -213,10 +213,11 @@ impl Library {
         match (m.tint, finish.color) {
             (Tint::Paint, Some(c)) => c,
             // A stain multiplies the timber, as a translucent coat does, then leans toward the
-            // stain's own colour so a dark stain on pale pine still reads as that stain.
+            // stain's own colour: a dark stain on pale pine still reads as that stain, and a
+            // white wash lightens.
             (Tint::Stain, Some(c)) => std::array::from_fn(|i| {
                 let through = m.color[i] * c[i];
-                through * 0.65 + c[i] * 0.35 * (0.4 + 0.6 * m.color[i])
+                through * 0.65 + c[i] * 0.35
             }),
             _ => m.color,
         }

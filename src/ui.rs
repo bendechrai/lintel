@@ -189,7 +189,7 @@ fn options_bar(s: &State, th: &Th) -> El {
                 s.aim_elevation(false);
             }));
             if let Some(depth) = s.section {
-                bar = bar.child(el().w(190.0).child(num(s, th, "Cut depth", "section-depth", depth, Fmt::Length, 0.25, |s: &mut State, x| {
+                bar = bar.child(el().w(236.0).child(num(s, th, "Cut depth", "section-depth", depth, Fmt::Length, 0.25, |s: &mut State, x| {
                     s.section = Some(x.clamp(0.0, 80.0));
                     s.aim_elevation(false);
                 })));
@@ -217,8 +217,8 @@ fn options_bar(s: &State, th: &Th) -> El {
             let ortho = matches!(s.camera.projection, Projection::Orthographic { .. });
             bar = bar
                 .child(spacer())
-                .child(el().w(170.0).child(num(s, th, "Sun from", "sun-azimuth", s.sun.azimuth, Fmt::Degrees, 10f32.to_radians(), |s: &mut State, x| s.sun.azimuth = x)))
-                .child(el().w(170.0).child(num(s, th, "Sun height", "sun-altitude", s.sun.altitude, Fmt::Degrees, 5f32.to_radians(), |s: &mut State, x| {
+                .child(el().w(236.0).child(num(s, th, "Sun from", "sun-azimuth", s.sun.azimuth, Fmt::Degrees, 10f32.to_radians(), |s: &mut State, x| s.sun.azimuth = x)))
+                .child(el().w(236.0).child(num(s, th, "Sun height", "sun-altitude", s.sun.altitude, Fmt::Degrees, 5f32.to_radians(), |s: &mut State, x| {
                     s.sun.altitude = x.clamp(5f32.to_radians(), 88f32.to_radians())
                 })))
                 .child(ghost(th, "projection", if ortho { "Parallel" } else { "Perspective" }, false).on_press(|s: &mut State| {

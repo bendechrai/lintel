@@ -309,11 +309,12 @@ fn options_leave_things_out() {
     assert!(!cut.picks.iter().any(|p| matches!(p, Pick::Roof(_) | Pick::Room(71) | Pick::Wall(70))));
     let room = pick_of(&cut, Pick::Room(50));
     assert!(cut.vertices.iter().filter(|v| v.pick == room).all(|v| v.pos[2] < 1.0), "the ceiling is off");
-    // The top level keeps its ceiling and the roofs.
+    // Cutting at the top level opens that one up too: no roof, no ceiling.
     let top = build(&project, &BuildOptions { top_level: Some(2), terrain: false, ..Default::default() });
-    assert!(top.picks.contains(&Pick::Roof(90)));
+    assert!(!top.picks.contains(&Pick::Roof(90)));
     let loft = pick_of(&top, Pick::Room(71));
-    assert!(top.vertices.iter().any(|v| v.pick == loft && v.pos[2] > 5.0), "a dropped ceiling at 2.2 m over a floor at 2.9");
+    assert!(top.vertices.iter().any(|v| v.pick == loft), "its floor is still there");
+    assert!(top.vertices.iter().filter(|v| v.pick == loft).all(|v| v.pos[2] < 5.0), "but not its ceiling at 2.2 m over a floor at 2.9");
     // A hidden level is not drawn.
     let mut hidden = project.clone();
     hidden.levels[1].visible = false;

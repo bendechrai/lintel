@@ -168,7 +168,7 @@ pub fn num(s: &State, th: &Th, label: &str, key: &str, value: f32, fmt: Fmt, ste
                 .min_w(0.0)
                 .h(24.0)
                 .center()
-                .cursor(rune::Cursor::ResizeHorizontal)
+                .cursor(rune::Cursor::ResizeColumn)
                 .child(text(shown).font(VALUE).color(th.text).truncate())
                 .on_drag(move |s: &mut State, d: &mut rune::Drag, tx: &mut Tx| match d.phase {
                     Phase::Down => d.data = value,

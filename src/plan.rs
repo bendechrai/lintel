@@ -76,7 +76,7 @@ impl Ink {
                 light: hex(0xcf9d12),
                 safety: hex(0xd64545),
                 air: hex(0x2f9e7d),
-                contour: hex(0xa9c4a2),
+                contour: hex(0xc3d6bd),
             }
         }
     }
@@ -429,7 +429,7 @@ fn draw_furniture(d: &mut Draw, f: &Furniture, selected: bool) {
     }
     // The front edge, heavier.
     d.line(pts[0], pts[1], if selected { 3.0 } else { 2.0 }, line);
-    if f.size[0] * d.cam.zoom > 58.0 && f.size[1] * d.cam.zoom > 22.0 && f.lift < 0.5 {
+    if d.cam.zoom > 52.0 && f.size[0] * d.cam.zoom > 58.0 && f.size[1] * d.cam.zoom > 22.0 && f.lift < 0.5 {
         d.label(f.at, f.name.clone(), SMALL, ink.faint);
     }
 }

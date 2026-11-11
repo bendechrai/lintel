@@ -103,7 +103,7 @@ fn frame_rows(s: &State, th: &Th, lib: &Library, frame: &Option<Frame>, wall: Id
             _ => None,
         }
     }
-    let mut v = vec![toggle(th, "Frame & trim", "frame-on", frame.is_some(), on_project("", move |p, on| {
+    let mut v = vec![toggle(th, "Frame & trim", "frame-on", frame.is_some(), on_project("", move |p, on: bool| {
         if let Some(f) = p.opening_mut(wall, id).and_then(frame_of) {
             *f = on.then(Frame::default)
         }
@@ -187,12 +187,12 @@ fn opening(s: &State, th: &Th, lib: &Library, w: &Wall, o: &Opening) -> Vec<El> 
                     d.swing = x
                 }
             })));
-            v.push(num(s, th, "Open", "door-open", d.open, Fmt::Percent, 0.05, on_project("door-open", move |p, x| {
+            v.push(num(s, th, "Open", "door-open", d.open, Fmt::Percent, 0.05, on_project("door-open", move |p, x: f32| {
                 if let Some(d) = door(p, wall, id) {
                     d.open = x.clamp(0.0, 1.0)
                 }
             })));
-            v.push(num(s, th, "Glazed", "door-glazing", d.glazing, Fmt::Percent, 0.05, on_project("door-glazing", move |p, x| {
+            v.push(num(s, th, "Glazed", "door-glazing", d.glazing, Fmt::Percent, 0.05, on_project("door-glazing", move |p, x: f32| {
                 if let Some(d) = door(p, wall, id) {
                     d.glazing = x.clamp(0.0, 1.0)
                 }
@@ -223,13 +223,13 @@ fn opening(s: &State, th: &Th, lib: &Library, w: &Wall, o: &Opening) -> Vec<El> 
                     g.inside = x
                 }
             })));
-            v.push(num(s, th, "Open", "garage-open", g.open, Fmt::Percent, 0.05, on_project("garage-open", move |p, x| {
+            v.push(num(s, th, "Open", "garage-open", g.open, Fmt::Percent, 0.05, on_project("garage-open", move |p, x: f32| {
                 if let Some(g) = garage(p, wall, id) {
                     g.open = x.clamp(0.0, 1.0)
                 }
             })));
             if g.style == GarageStyle::Sectional {
-                v.push(num(s, th, "Panels", "garage-panels", g.panels as f32, Fmt::Count, 1.0, on_project("garage-panels", move |p, x| {
+                v.push(num(s, th, "Panels", "garage-panels", g.panels as f32, Fmt::Count, 1.0, on_project("garage-panels", move |p, x: f32| {
                     if let Some(g) = garage(p, wall, id) {
                         g.panels = x.clamp(2.0, 8.0) as u32
                     }
@@ -263,12 +263,12 @@ fn opening(s: &State, th: &Th, lib: &Library, w: &Wall, o: &Opening) -> Vec<El> 
                 }
             })));
             if win.style == WindowStyle::Fixed {
-                v.push(num(s, th, "Panes across", "window-cols", win.cols as f32, Fmt::Count, 1.0, on_project("window-cols", move |p, x| {
+                v.push(num(s, th, "Panes across", "window-cols", win.cols as f32, Fmt::Count, 1.0, on_project("window-cols", move |p, x: f32| {
                     if let Some(w) = window(p, wall, id) {
                         w.cols = x.clamp(1.0, 12.0) as u32
                     }
                 })));
-                v.push(num(s, th, "Panes up", "window-rows", win.rows as f32, Fmt::Count, 1.0, on_project("window-rows", move |p, x| {
+                v.push(num(s, th, "Panes up", "window-rows", win.rows as f32, Fmt::Count, 1.0, on_project("window-rows", move |p, x: f32| {
                     if let Some(w) = window(p, wall, id) {
                         w.rows = x.clamp(1.0, 12.0) as u32
                     }
@@ -378,7 +378,7 @@ fn stair(s: &State, th: &Th, lib: &Library, st: &Stair) -> Vec<El> {
                 r.rise = x.max(0.1)
             }
         }),
-        num(s, th, "Steps", "stair-steps", st.steps as f32, Fmt::Count, 1.0, on_project("stair-steps", move |p, x| {
+        num(s, th, "Steps", "stair-steps", st.steps as f32, Fmt::Count, 1.0, on_project("stair-steps", move |p, x: f32| {
             if let Some(r) = p.stair_mut(id) {
                 r.steps = x.clamp(1.0, 40.0) as u32
             }
@@ -603,7 +603,7 @@ fn roof(s: &State, th: &Th, lib: &Library, r: &Roof) -> Vec<El> {
                 r.size[1] = x.max(0.5)
             }
         }),
-        num(s, th, "Pitch (rise/run)", "roof-pitch", r.pitch, Fmt::Number, 0.01, on_project("roof-pitch", move |p, x| {
+        num(s, th, "Pitch (rise/run)", "roof-pitch", r.pitch, Fmt::Number, 0.01, on_project("roof-pitch", move |p, x: f32| {
             if let Some(r) = p.roof_mut(id) {
                 r.pitch = x.clamp(0.0, 3.0)
             }
@@ -791,7 +791,7 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
     v.push(fact(th, "Extent", format!("{} × {}", units::length(size[0], p.units), units::length(size[1], p.units))));
     v.push(fact(th, "Relief", if t.heights.is_empty() { "flat".into() } else { format!("{} to {}", units::length(lo, p.units), units::length(hi, p.units)) }));
     v.push(fin(s, th, lib, "Ground cover", "site-finish", &t.finish, |p, f| p.site.terrain.finish = f));
-    v.push(num(s, th, "North is", "site-north", p.site.north.to_radians(), Fmt::Degrees, 5f32.to_radians(), on_project("site-north", |p, x| p.site.north = x.to_degrees())));
+    v.push(num(s, th, "North is", "site-north", p.site.north.to_radians(), Fmt::Degrees, 5f32.to_radians(), on_project("site-north", |p, x: f32| p.site.north = x.to_degrees())));
 
     v.push(text("Shape it as a plane").font(LABEL).color(th.text).mt(8.0));
     v.push(num(s, th, "Falls toward", "slope-bearing", s.slope.0.to_radians(), Fmt::Degrees, 5f32.to_radians(), |s: &mut State, x| s.slope.0 = x.to_degrees()));
