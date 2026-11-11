@@ -1,0 +1,345 @@
+use std::f32::consts::FRAC_PI_2;
+
+use super::geom::{area, triangulate};
+use super::*;
+use crate::catalog;
+use crate::model::*;
+use crate::scene::{Vertex, len};
+
+fn wall(id: Id, a: P2, b: P2) -> Wall {
+    Wall { id, a, b, thickness: 0.2, height: None, base: 0.0, left: Finish::paint(0xffffff), right: Finish::of("brick"), openings: vec![] }
+}
+
+fn door(style: DoorStyle, open: f32) -> OpeningKind {
+    OpeningKind::Door(Door { style, hinge: Hinge::Start, swing: WallSide::Left, open, leaf: Finish::of("oak"), frame: Some(Frame::default()), glazing: 0.5 })
+}
+
+/// A 6 × 4 m room on ground that falls to the north, with one of everything in it.
+fn house() -> Project {
+    let mut level = Level::new(1, "Ground", 0.0, 2.6);
+    let mut south = wall(10, [0.0, 0.0], [6.0, 0.0]);
+    south.openings = vec![
+        Opening { id: 20, at: 1.5, width: 0.9, height: 2.1, sill: 0.0, kind: door(DoorStyle::Hinged, 0.5) },
+        Opening { id: 21, at: 4.0, width: 1.2, height: 1.2, sill: 0.9, kind: OpeningKind::Window(Window::new(WindowStyle::DoubleHung)) },
+    ];
+    let mut east = wall(11, [6.0, 0.0], [6.0, 4.0]);
+    east.openings = vec![
+        Opening { id: 22, at: 2.0, width: 2.6, height: 2.1, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Sectional, inside: WallSide::Left, open: 0.4, panels: 4, finish: Finish::paint(0xeeeeee) }) },
+    ];
+    let mut north = wall(12, [6.0, 4.0], [0.0, 4.0]);
+    north.openings = vec![
+        Opening { id: 23, at: 1.0, width: 0.8, height: 1.0, sill: 1.0, kind: OpeningKind::Recess { side: WallSide::Left, depth: 0.1, finish: Finish::of("oak") } },
+        Opening { id: 24, at: 3.0, width: 1.0, height: 2.1, sill: 0.0, kind: OpeningKind::Passage { frame: Some(Frame::default()) } },
+        Opening { id: 25, at: 5.0, width: 0.8, height: 2.0, sill: 0.0, kind: door(DoorStyle::Bifold, 0.7) },
+    ];
+    let mut west = wall(13, [0.0, 4.0], [0.0, 0.0]);
+    let styles = [WindowStyle::Fixed, WindowStyle::Casement, WindowStyle::Awning, WindowStyle::Sliding, WindowStyle::Louvre];
+    west.openings = styles
+        .iter()
+        .enumerate()
+        .map(|(i, style)| Opening { id: 30 + i as Id, at: 0.4 + i as f32 * 0.8, width: 0.6, height: 1.0, sill: 1.0, kind: OpeningKind::Window(Window { cols: 2, rows: 2, casing: (i == 0).then(Frame::default), ..Window::new(*style) }) })
+        .collect();
+    // A free-standing nib with the other door and garage styles along it.
+    let mut nib = wall(14, [1.0, 2.0], [5.5, 2.0]);
+    nib.openings = vec![
+        Opening { id: 40, at: 0.6, width: 0.8, height: 2.0, sill: 0.0, kind: door(DoorStyle::Double, 1.0) },
+        Opening { id: 41, at: 1.6, width: 0.8, height: 2.0, sill: 0.0, kind: door(DoorStyle::Sliding, 0.3) },
+        Opening { id: 42, at: 2.6, width: 0.8, height: 2.0, sill: 0.0, kind: door(DoorStyle::Pocket, 0.5) },
+        Opening { id: 43, at: 3.5, width: 0.7, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Roller, inside: WallSide::Right, open: 0.5, panels: 4, finish: Finish::of("roller_door") }) },
+        Opening { id: 44, at: 4.2, width: 0.5, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Tilt, inside: WallSide::Left, open: 0.5, panels: 1, finish: Finish::paint(0xcccccc) }) },
+    ];
+    level.walls = vec![south, east, north, west, nib];
+    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true }];
+    level.stairs = vec![
+        Stair { id: 60, at: [1.0, 1.0], direction: 0.0, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: true, railing: Railing::Both },
+        Stair { id: 61, at: [1.0, 3.0], direction: 0.3, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: false, railing: Railing::Left },
+    ];
+    let kinds = [
+        FixtureKind::Outlet { gangs: 2 },
+        FixtureKind::Switch { gangs: 3 },
+        FixtureKind::SmokeDetector,
+        FixtureKind::Downlight { diameter: 0.1 },
+        FixtureKind::TubeLight { length: 1.2, width: 0.05 },
+        FixtureKind::Surface { diameter: 0.3 },
+        FixtureKind::Pendant { diameter: 0.4, drop: 0.8 },
+        FixtureKind::Vent { width: 0.5, height: 0.3 },
+        FixtureKind::Thermostat,
+        FixtureKind::Data,
+    ];
+    for (i, kind) in kinds.iter().enumerate() {
+        let at = [0.5 + i as f32 * 0.5, 1.0];
+        for (j, mount) in [Mount::Wall { wall: 10, side: WallSide::Left, at: at[0], height: 1.1 }, Mount::Ceiling { at, turn: 0.4 }, Mount::Floor { at, turn: 0.0 }].into_iter().enumerate() {
+            level.fixtures.push(Fixture { id: 100 + (i * 3 + j) as Id, kind: *kind, mount, label: String::new() });
+        }
+    }
+    // A fixture on a wall that isn't there is skipped.
+    level.fixtures.push(Fixture { id: 199, kind: FixtureKind::Data, mount: Mount::Wall { wall: 999, side: WallSide::Left, at: 0.0, height: 1.0 }, label: String::new() });
+    for (i, piece) in catalog::catalog().iter().enumerate() {
+        let mut f = catalog::place(piece.key, 200 + i as Id, [3.0, 2.0]).unwrap();
+        f.turn = i as f32 * 0.3;
+        level.furniture.push(f);
+    }
+    level.furniture.push(Furniture { id: 299, kind: "no such thing".into(), name: String::new(), at: [1.0, 1.0], turn: 0.0, size: [1.0, 1.0, 1.0], lift: 0.0, finish: Finish::of("oak"), accent: Finish::of("oak") });
+
+    let mut upper = Level::new(2, "Upper", 2.9, 2.4);
+    upper.walls = vec![wall(70, [0.0, 0.0], [6.0, 0.0])];
+    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true }];
+
+    let roof = |id: Id, shape: RoofShape, center: P2| Roof { id, name: "Roof".into(), shape, center, size: [7.0, 4.5], turn: 0.2, base: 5.3, pitch: 0.5, overhang: 0.4, thickness: 0.2, finish: Finish::of("shingle"), gable: Finish::of("siding"), visible: true };
+    Project {
+        name: "Test".into(),
+        units: Units::Metric,
+        site: Site {
+            terrain: Terrain::sloped([-10.0, -10.0], [26.0, 24.0], 2.0, FRAC_PI_2, 0.15, [0.0, 0.0]),
+            patches: vec![Patch { id: 80, name: "Drive".into(), outline: vec![[1.0, -8.0], [4.0, -8.0], [4.0, -0.5], [1.0, -0.5]], finish: Finish::of("concrete") }],
+            geo: None,
+            north: 0.0,
+        },
+        levels: vec![level, upper],
+        roofs: vec![roof(90, RoofShape::Gable, [3.0, 2.0]), roof(91, RoofShape::Hip, [3.0, 2.0]), roof(92, RoofShape::Shed, [3.0, 2.0]), roof(93, RoofShape::Flat, [3.0, 2.0]), Roof { size: [3.0, 6.0], ..roof(94, RoofShape::Hip, [3.0, 2.0]) }],
+        materials: vec![],
+        next_id: 1000,
+    }
+}
+
+fn triangles<'a>(scene: &'a Scene) -> impl Iterator<Item = [&'a Vertex; 3]> + 'a {
+    scene.opaque.chunks(3).chain(scene.translucent.chunks(3)).map(|t| [&scene.vertices[t[0] as usize], &scene.vertices[t[1] as usize], &scene.vertices[t[2] as usize]])
+}
+
+fn pick_of(scene: &Scene, pick: Pick) -> f32 {
+    (scene.picks.iter().position(|p| *p == pick).unwrap_or_else(|| panic!("{pick:?} was never drawn")) + 1) as f32
+}
+
+fn tri_area(t: &[P2; 3]) -> f32 {
+    area(t)
+}
+
+#[test]
+fn triangulation_covers_the_outline_whichever_way_it_winds() {
+    let square = [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]];
+    let ell = [[0.0, 0.0], [4.0, 0.0], [4.0, 1.0], [1.0, 1.0], [1.0, 3.0], [0.0, 3.0]];
+    let comb = [[0.0, 0.0], [5.0, 0.0], [5.0, 3.0], [4.0, 3.0], [4.0, 1.0], [3.0, 1.0], [3.0, 3.0], [2.0, 3.0], [2.0, 1.0], [1.0, 1.0], [1.0, 3.0], [0.0, 3.0]];
+    // Extra points along edges, and the first point repeated at the end.
+    let fussy = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 2.0], [1.0, 2.0], [0.0, 2.0], [0.0, 1.0], [0.0, 0.0]];
+    for outline in [&square[..], &ell[..], &comb[..], &fussy[..]] {
+        let want = area(outline).abs();
+        for pts in [outline.to_vec(), outline.iter().rev().copied().collect::<Vec<_>>()] {
+            let tris = triangulate(&pts);
+            assert!(tris.iter().all(|t| tri_area(t) > 0.0), "every triangle is counter-clockwise");
+            let got: f32 = tris.iter().map(tri_area).sum();
+            assert!((got - want).abs() < 1e-4, "area {got} of {want} for {pts:?}");
+        }
+    }
+    assert!(triangulate(&[[0.0, 0.0], [1.0, 0.0]]).is_empty());
+    assert!(triangulate(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]).is_empty());
+}
+
+#[test]
+fn a_whole_house_is_sound() {
+    let project = house();
+    let scene = build(&project, &BuildOptions::default());
+    assert!(scene.opaque.len() % 3 == 0 && scene.translucent.len() % 3 == 0);
+    assert!(!scene.translucent.is_empty(), "windows have glass");
+    let n = scene.vertices.len() as u32;
+    assert!(scene.opaque.iter().chain(&scene.translucent).all(|i| *i < n));
+    for v in &scene.vertices {
+        assert!(v.pos.iter().chain(&v.normal).chain(&v.color).chain(&v.uv).all(|x| x.is_finite()), "{v:?}");
+        assert!((len(v.normal) - 1.0).abs() < 1e-3, "normal {:?}", v.normal);
+        assert!(v.pick >= 0.0 && v.pick as usize <= scene.picks.len());
+    }
+    // No slivers with no area worth the name, and the normals agree with the winding.
+    for t in triangles(&scene) {
+        let n = crate::scene::cross(crate::scene::sub(t[1].pos, t[0].pos), crate::scene::sub(t[2].pos, t[0].pos));
+        if len(n) > 1e-7 && t[0].normal == t[1].normal && t[1].normal == t[2].normal {
+            assert!(crate::scene::dot(n, t[0].normal) > 0.0, "a face is wound against its normal: {t:?}");
+        }
+    }
+    // Everything the model holds can be picked.
+    let level = &project.levels[0];
+    for w in &level.walls {
+        pick_of(&scene, Pick::Wall(w.id));
+        for o in &w.openings {
+            pick_of(&scene, Pick::Opening(w.id, o.id));
+        }
+    }
+    for f in level.fixtures.iter().filter(|f| f.id != 199) {
+        pick_of(&scene, Pick::Fixture(f.id));
+    }
+    for f in &level.furniture {
+        pick_of(&scene, Pick::Furniture(f.id));
+    }
+    for pick in [Pick::Room(50), Pick::Room(71), Pick::Stair(60), Pick::Stair(61), Pick::Patch(80), Pick::Roof(90), Pick::Roof(94)] {
+        pick_of(&scene, pick);
+    }
+    assert!(!scene.picks.contains(&Pick::Fixture(199)));
+    // The bounds are the building's, not the 26 m site's.
+    let (lo, hi) = scene.bounds;
+    assert!(lo[0] > -2.5 && lo[1] > -2.5 && hi[0] < 8.5 && hi[1] < 6.5, "{lo:?} {hi:?}");
+    assert!(lo[2] <= -0.29 && hi[2] > 5.3, "{lo:?} {hi:?}");
+}
+
+/// Whether any triangle of `pick` lying in the plane `y = plane` covers the point (x, z).
+fn face_covers(scene: &Scene, pick: f32, plane: f32, x: f32, z: f32) -> usize {
+    triangles(scene)
+        .filter(|t| t.iter().all(|v| v.pick == pick && (v.pos[1] - plane).abs() < 1e-4))
+        .filter(|t| {
+            let p = |i: usize| [t[i].pos[0], t[i].pos[2]];
+            let side = |a: P2, b: P2| (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
+            let (d0, d1, d2) = (side(p(0), p(1)), side(p(1), p(2)), side(p(2), p(0)));
+            (d0 > 0.0 && d1 > 0.0 && d2 > 0.0) || (d0 < 0.0 && d1 < 0.0 && d2 < 0.0)
+        })
+        .count()
+}
+
+#[test]
+fn openings_are_cut_out_of_both_faces_of_a_wall() {
+    let project = house();
+    let scene = build(&project, &BuildOptions { furniture: false, fixtures: false, ..Default::default() });
+    let pick = pick_of(&scene, Pick::Wall(10));
+    for plane in [0.1, -0.1] {
+        // Solid wall, beside and between the openings, under the window and over the door.
+        for (x, z) in [(0.5, 1.0), (2.7, 1.3), (5.5, 2.5), (4.2, 0.3), (4.2, 2.4), (1.6, 2.35)] {
+            assert_eq!(face_covers(&scene, pick, plane, x, z), 1, "wall face at {x}, {z} on y = {plane}");
+        }
+        // The door (0.9 wide at 1.5) and the window (1.2 wide at 4.0, sill 0.9, head 2.1).
+        for (x, z) in [(1.5, 1.0), (1.1, 0.05), (1.9, 2.05), (4.0, 1.5), (3.45, 0.95), (4.55, 2.05)] {
+            assert_eq!(face_covers(&scene, pick, plane, x, z), 0, "opening at {x}, {z} on y = {plane}");
+        }
+    }
+    // A recess is cut from its own face only, and has a back.
+    let north = pick_of(&scene, Pick::Wall(12));
+    assert_eq!(face_covers(&scene, north, 3.9, 5.1, 1.3), 0, "the recess is open on the wall's left face");
+    assert_eq!(face_covers(&scene, north, 4.1, 5.1, 1.3), 1, "and solid on the right");
+    let recess = pick_of(&scene, Pick::Opening(12, 23));
+    assert_eq!(face_covers(&scene, recess, 4.0, 5.1, 1.3), 1, "its back is 0.1 m in");
+}
+
+#[test]
+fn overlapping_and_overhanging_openings_do_not_break_a_wall() {
+    let mut project = house();
+    let w = &mut project.levels[0].walls[0];
+    let window = || OpeningKind::Window(Window::new(WindowStyle::Fixed));
+    w.openings = vec![
+        Opening { id: 1, at: 0.1, width: 1.0, height: 5.0, sill: -1.0, kind: window() },
+        Opening { id: 2, at: 0.3, width: 1.0, height: 1.0, sill: 1.0, kind: window() },
+        Opening { id: 3, at: 9.0, width: 1.0, height: 1.0, sill: 1.0, kind: window() },
+        Opening { id: 4, at: 3.0, width: f32::NAN, height: 1.0, sill: 1.0, kind: window() },
+        Opening { id: 5, at: 5.0, width: 0.0, height: 1.0, sill: 1.0, kind: door(DoorStyle::Hinged, 2.0) },
+    ];
+    let scene = build(&project, &BuildOptions::default());
+    assert!(scene.vertices.iter().all(|v| v.pos.iter().all(|x| x.is_finite())));
+    assert!(scene.picks.contains(&Pick::Opening(10, 1)));
+    for id in 2..=5 {
+        assert!(!scene.picks.contains(&Pick::Opening(10, id)), "opening {id} should be dropped");
+    }
+}
+
+#[test]
+fn an_empty_project_builds_to_nothing() {
+    let project = Project {
+        name: String::new(),
+        units: Units::Metric,
+        site: Site { terrain: Terrain { origin: [0.0, 0.0], spacing: 1.0, cols: 0, rows: 0, heights: vec![], finish: Finish::of("grass"), source: String::new() }, patches: vec![], geo: None, north: 0.0 },
+        levels: vec![],
+        roofs: vec![],
+        materials: vec![],
+        next_id: 0,
+    };
+    let scene = build(&project, &BuildOptions::default());
+    assert!(scene.vertices.is_empty() && scene.opaque.is_empty());
+    assert_eq!(scene.bounds, ([0.0; 3], [0.0; 3]));
+    assert_eq!(terrain_height(&project, [3.0, 3.0]), 0.0);
+    // Degenerate things on a level are skipped rather than drawn as nonsense.
+    let mut project = project;
+    let mut level = Level::new(1, "L", 0.0, 2.4);
+    level.walls = vec![wall(1, [1.0, 1.0], [1.0, 1.0])];
+    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true }];
+    level.stairs = vec![Stair { id: 3, at: [0.0, 0.0], direction: 0.0, width: 1.0, run: 0.0, rise: 3.0, steps: 0, tread: Finish::of("oak"), closed: true, railing: Railing::Both }];
+    project.levels = vec![level];
+    assert!(build(&project, &BuildOptions::default()).vertices.is_empty());
+}
+
+#[test]
+fn the_ground_is_dug_out_under_rooms_and_left_alone_elsewhere() {
+    let project = house();
+    let ground = Ground::new(&project);
+    let terrain = &project.site.terrain;
+    // The lot falls to the north, so the south of the room is below natural ground.
+    assert!(terrain.height([3.0, -5.0]) > 0.5);
+    let slab = project.levels[0].elevation - project.levels[0].slab;
+    for x in 0..=12 {
+        for y in 0..=8 {
+            let p = [x as f32 * 0.5, y as f32 * 0.5];
+            assert!(ground.height(p) <= slab.max(terrain.height(p)) + 1e-4, "ground {} at {p:?} is above the slab", ground.height(p));
+            if terrain.height(p) > slab {
+                assert!(ground.height(p) < slab, "ground at {p:?} was not dug");
+            }
+        }
+    }
+    for p in [[3.0, -5.0], [-6.0, 2.0], [12.0, 9.0]] {
+        assert!((ground.height(p) - terrain.height(p)).abs() < 1e-4, "ground away from the house at {p:?}");
+    }
+    assert_eq!(terrain_height(&project, [3.0, 2.0]), ground.height([3.0, 2.0]));
+    // And the patch lies on it.
+    let scene = build(&project, &BuildOptions::default());
+    let pick = pick_of(&scene, Pick::Patch(80));
+    let on: Vec<&Vertex> = scene.vertices.iter().filter(|v| v.pick == pick).collect();
+    assert!(on.len() > 30, "the patch is subdivided to follow the ground");
+    assert!(on.iter().all(|v| (v.pos[2] - ground.height([v.pos[0], v.pos[1]]) - 0.03).abs() < 1e-4));
+    let cells = scene.opaque.len() / 3;
+    assert!(cells < 150_000, "{cells} triangles");
+}
+
+#[test]
+fn options_leave_things_out() {
+    let project = house();
+    let all = build(&project, &BuildOptions::default());
+    let count = |o: BuildOptions| build(&project, &o).vertices.len();
+    for o in [
+        BuildOptions { terrain: false, ..Default::default() },
+        BuildOptions { roofs: false, ..Default::default() },
+        BuildOptions { ceilings: false, ..Default::default() },
+        BuildOptions { fixtures: false, ..Default::default() },
+        BuildOptions { furniture: false, ..Default::default() },
+    ] {
+        assert!(count(o.clone()) < all.vertices.len(), "{o:?}");
+    }
+    // Cutting at the lower level takes off the upper level, the roofs and the lower ceiling.
+    let cut = build(&project, &BuildOptions { top_level: Some(1), terrain: false, ..Default::default() });
+    assert!(!cut.picks.iter().any(|p| matches!(p, Pick::Roof(_) | Pick::Room(71) | Pick::Wall(70))));
+    let room = pick_of(&cut, Pick::Room(50));
+    assert!(cut.vertices.iter().filter(|v| v.pick == room).all(|v| v.pos[2] < 1.0), "the ceiling is off");
+    // The top level keeps its ceiling and the roofs.
+    let top = build(&project, &BuildOptions { top_level: Some(2), terrain: false, ..Default::default() });
+    assert!(top.picks.contains(&Pick::Roof(90)));
+    let loft = pick_of(&top, Pick::Room(71));
+    assert!(top.vertices.iter().any(|v| v.pick == loft && v.pos[2] > 5.0), "a dropped ceiling at 2.2 m over a floor at 2.9");
+    // A hidden level is not drawn.
+    let mut hidden = project.clone();
+    hidden.levels[1].visible = false;
+    assert!(!build(&hidden, &BuildOptions::default()).picks.contains(&Pick::Room(71)));
+}
+
+#[test]
+fn a_garage_door_rides_up_and_back_under_the_ceiling() {
+    let mut project = house();
+    let span = |project: &Project| {
+        let scene = build(project, &BuildOptions { terrain: false, furniture: false, fixtures: false, ..Default::default() });
+        let pick = pick_of(&scene, Pick::Opening(11, 22));
+        let of: Vec<[f32; 3]> = scene.vertices.iter().filter(|v| v.pick == pick).map(|v| v.pos).collect();
+        let fold = |i: usize, f: fn(f32, f32) -> f32, start: f32| of.iter().map(|p| p[i]).fold(start, f);
+        (fold(2, f32::min, f32::MAX), fold(2, f32::max, f32::MIN), fold(0, f32::min, f32::MAX))
+    };
+    let set = |project: &mut Project, open: f32| {
+        if let OpeningKind::Garage(g) = &mut project.levels[0].walls[1].openings[0].kind {
+            g.open = open;
+        }
+    };
+    // The wall runs north along x = 6 and its left side, the inside, is toward -x.
+    set(&mut project, 0.0);
+    let (lo, hi, reach) = span(&project);
+    assert!(lo < 0.02 && hi < 2.2 && reach > 5.8, "closed: {lo} {hi} {reach}");
+    set(&mut project, 1.0);
+    let (lo, hi, reach) = span(&project);
+    assert!(lo > 2.05 && hi < 2.25 && reach < 3.9, "open: {lo} {hi} {reach}");
+}
