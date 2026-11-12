@@ -46,8 +46,12 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 shadows, and light bounced off walls, floors and ceilings. The map shows on the plan and in
 3D, each room gets an average, and the status line reads the level under the pointer.
 
+Give a room a target (150, 300, 500 lux or your own) and it is flagged when the calculation
+falls short. The sky can be clear or overcast: a cloudy day has no direct sun and is the
+usual worst case for daylight.
+
 It is a planning estimate, not a photometric report. Fittings are ideal points with a simple
-beam shape (no IES files), the sky is clear and uniform, glass passes 80 %, and surfaces
+beam shape (no IES files), the clear sky is uniform and the overcast one is the CIE standard, glass passes 80 %, and surfaces
 reflect diffusely by their colour. The tests check it against the inverse-square law, the
 daylight on open ground, and the energy balance of bounced light in a closed room.
 

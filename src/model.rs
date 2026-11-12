@@ -128,11 +128,14 @@ pub struct SunSetting {
     pub hour: f32,
     /// Hours the local clock is ahead of UTC.
     pub utc_offset: f32,
+    /// A cloudy day: no direct sun, a brighter-overhead grey sky.
+    #[serde(default)]
+    pub overcast: bool,
 }
 
 impl Default for SunSetting {
     fn default() -> SunSetting {
-        SunSetting { by_clock: false, azimuth: 153.0, altitude: 49.0, month: 6, day: 21, hour: 14.0, utc_offset: 0.0 }
+        SunSetting { by_clock: false, azimuth: 153.0, altitude: 49.0, month: 6, day: 21, hour: 14.0, utc_offset: 0.0, overcast: false }
     }
 }
 
@@ -551,6 +554,9 @@ pub struct Room {
     /// False for a deck, a porch or a carport: a floor with nothing over it.
     #[serde(default = "yes")]
     pub has_ceiling: bool,
+    /// The light level this room should reach, in lux, if it has a target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_lux: Option<f32>,
 }
 
 /// A straight flight. It starts at `at` on this level's floor and climbs `rise` metres toward

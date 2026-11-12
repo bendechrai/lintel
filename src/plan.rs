@@ -653,7 +653,13 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
         let _ = selected;
         d.label(add(c, [0.0, d.px(8.0)]), r.name.clone(), NAME, ink.text);
         match s.lux.levels.as_ref().filter(|_| s.lux.show).and_then(|l| l.rooms.iter().find(|x| x.room == r.id)) {
-            Some(lit) => d.label(add(c, [0.0, -d.px(8.0)]), format!("{} lux", crate::widgets::round_lux(lit.mean)), SMALL, ink.text),
+            Some(lit) => {
+                let text = match r.target_lux {
+                    Some(t) if lit.mean < t => format!("{} of {} lux", crate::widgets::round_lux(lit.mean), crate::widgets::round_lux(t)),
+                    _ => format!("{} lux", crate::widgets::round_lux(lit.mean)),
+                };
+                d.label(add(c, [0.0, -d.px(8.0)]), text, SMALL, ink.text)
+            }
             None => d.label(add(c, [0.0, -d.px(8.0)]), units::area(geom::area(&r.outline).abs(), d.units), SMALL, ink.faint),
         }
     }

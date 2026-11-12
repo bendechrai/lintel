@@ -350,8 +350,25 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
             }
         }));
     }
+    v.push(section(th, "Light"));
+    let targets = [("None", None), ("150", Some(150.0f32)), ("300", Some(300.0)), ("500", Some(500.0))];
+    v.push(choice(th, "Target (lux)", "room-target", &r.target_lux, &targets, on_project("", move |p: &mut Project, x: Option<f32>| {
+        if let Some(r) = p.room_mut(id) {
+            r.target_lux = x
+        }
+    })));
+    if let Some(t) = r.target_lux {
+        v.push(num(s, th, "Target", "room-target-lux", t, Fmt::Count, 50.0, on_project("room-target-lux", move |p: &mut Project, x: f32| {
+            if let Some(r) = p.room_mut(id) {
+                r.target_lux = Some(x.clamp(1.0, 100_000.0))
+            }
+        })));
+    }
     if let Some(lit) = s.lux.levels.as_ref().and_then(|l| l.rooms.iter().find(|x| x.room == id)) {
-        v.push(section(th, "Light"));
+        if let Some(t) = r.target_lux {
+            let short = lit.mean < t;
+            v.push(text(if short { format!("Below its target: {} of {} lux.", round_lux(lit.mean), round_lux(t)) } else { format!("Meets its target of {} lux.", round_lux(t)) }).font(VALUE).color(if short { crate::plan::hex(0xc9772b) } else { crate::plan::hex(0x2f9e7d) }).wrap());
+        }
         v.push(fact(th, "Average", format!("{} lux", round_lux(lit.mean))));
         v.push(fact(th, "Range", format!("{} to {} lux", round_lux(lit.min), round_lux(lit.max))));
         v.push(text(format!("{}{}", crate::lux::describe(lit.mean), if s.lux.stale { " (calculated before the last change)" } else { "" })).font(SMALL).color(th.dim).wrap());
@@ -630,6 +647,7 @@ fn sun_rows(s: &State, th: &Th) -> Vec<El> {
             }
         })),
     ];
+    v.push(choice(th, "Sky", "sun-sky", &sun.overcast, &[("Clear", false), ("Overcast", true)], on_project("", |p: &mut Project, x: bool| p.site.sun.overcast = x)));
     if sun.by_clock {
         const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         v.push(num(s, th, "Latitude", "sun-lat", geo.lat as f32, Fmt::Number, 0.5, on_project("sun-lat", |p: &mut Project, x: f32| {
@@ -808,7 +826,11 @@ fn light_rows(s: &State, th: &Th) -> Vec<El> {
                     .on_press(move |s: &mut State| s.select(Some(Pick::Room(id))))
                     .child(rune::el().size(10.0, 10.0).radius(2.0).fill(crate::plan::srgb(crate::lux::color(room.mean))))
                     .child(text(room.name.clone()).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
-                    .child(text(format!("{} lux", round_lux(room.mean))).font(VALUE).color(th.text)),
+                    .child(match s.project.room(id).and_then(|r| r.target_lux) {
+                        Some(t) if room.mean < t => text(format!("{} of {} lux", round_lux(room.mean), round_lux(t))).font(VALUE).color(crate::plan::hex(0xc9772b)),
+                        Some(t) => text(format!("{} lux ✓ {}", round_lux(room.mean), round_lux(t))).font(VALUE).color(crate::plan::hex(0x2f9e7d)),
+                        None => text(format!("{} lux", round_lux(room.mean))).font(VALUE).color(th.text),
+                    }),
             );
         }
     }

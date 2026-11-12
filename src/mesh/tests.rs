@@ -49,7 +49,7 @@ fn house() -> Project {
         Opening { id: 44, at: 4.2, width: 0.5, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Tilt, inside: WallSide::Left, open: 0.5, panels: 1, finish: Finish::paint(0xcccccc) }) },
     ];
     level.walls = vec![south, east, north, west, nib];
-    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true }];
+    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }];
     level.stairs = vec![
         Stair { id: 60, at: [1.0, 1.0], direction: 0.0, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: true, railing: Railing::Both },
         Stair { id: 61, at: [1.0, 3.0], direction: 0.3, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: false, railing: Railing::Left },
@@ -83,7 +83,7 @@ fn house() -> Project {
 
     let mut upper = Level::new(2, "Upper", 2.9, 2.4);
     upper.walls = vec![wall(70, [0.0, 0.0], [6.0, 0.0])];
-    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true }];
+    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, target_lux: None }];
 
     let roof = |id: Id, shape: RoofShape, center: P2| Roof { id, name: "Roof".into(), shape, center, size: [7.0, 4.5], turn: 0.2, base: 5.3, pitch: 0.5, overhang: 0.4, thickness: 0.2, finish: Finish::of("shingle"), gable: Finish::of("siding"), visible: true };
     Project {
@@ -254,7 +254,7 @@ fn an_empty_project_builds_to_nothing() {
     let mut project = project;
     let mut level = Level::new(1, "L", 0.0, 2.4);
     level.walls = vec![wall(1, [1.0, 1.0], [1.0, 1.0])];
-    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true }];
+    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }];
     level.stairs = vec![Stair { id: 3, at: [0.0, 0.0], direction: 0.0, width: 1.0, run: 0.0, rise: 3.0, steps: 0, tread: Finish::of("oak"), closed: true, railing: Railing::Both }];
     project.levels = vec![level];
     assert!(build(&project, &BuildOptions::default()).vertices.is_empty());

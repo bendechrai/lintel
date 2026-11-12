@@ -92,9 +92,14 @@ pub fn sun_lux(altitude: f32) -> f32 {
     if altitude <= 0.005 { 0.0 } else { 133_800.0 * (-0.2 / altitude.sin()).exp() }
 }
 
-/// Lux the sky alone puts on open level ground.
+/// Lux a clear sky alone puts on open level ground.
 pub fn sky_lux(altitude: f32) -> f32 {
     if altitude <= 0.0 { 0.0 } else { 800.0 + 15_500.0 * altitude.sin().sqrt() }
+}
+
+/// Lux a fully overcast sky puts on open level ground.
+pub fn overcast_lux(altitude: f32) -> f32 {
+    if altitude <= 0.0 { 0.0 } else { 300.0 + 21_000.0 * altitude.sin() }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -292,18 +297,31 @@ pub struct Sources<'a> {
     /// Unit vector toward the sun, and its height in radians.
     pub sun: [f32; 3],
     pub altitude: f32,
+    /// A cloudy day: no direct sun, and a sky three times brighter overhead than at the
+    /// horizon (the CIE overcast sky).
+    pub overcast: bool,
 }
 
 impl Sources<'_> {
     fn sun_lux(&self) -> f32 {
-        sun_lux(self.altitude)
+        if self.overcast { 0.0 } else { sun_lux(self.altitude) }
+    }
+
+    /// Lux from the whole sky on open level ground.
+    fn sky_lux(&self) -> f32 {
+        if self.overcast { overcast_lux(self.altitude) } else { sky_lux(self.altitude) }
     }
 
     /// Luminance of the sky or the ground seen along a direction that leaves the scene.
     fn backdrop(&self, d: [f32; 3]) -> f32 {
-        let sky = sky_lux(self.altitude);
+        let sky = self.sky_lux();
         if d[2] >= 0.0 {
-            sky / std::f32::consts::PI
+            if self.overcast {
+                // L(θ) = Lz (1 + 2 sin θ) / 3, with Lz = 9 E / 7π.
+                9.0 * sky / (7.0 * std::f32::consts::PI) * (1.0 + 2.0 * d[2]) / 3.0
+            } else {
+                sky / std::f32::consts::PI
+            }
         } else {
             (sky + self.sun_lux() * self.altitude.sin().max(0.0)) * GROUND_REFLECTANCE / std::f32::consts::PI
         }
@@ -336,7 +354,7 @@ impl Rng {
 fn direct(tracer: &Tracer, src: &Sources, p: [f32; 3], n: [f32; 3], one_lamp: Option<&mut Rng>) -> f32 {
     let mut e = 0.0;
     let facing = dot(n, src.sun);
-    if facing > 0.0 && src.altitude > 0.005 {
+    if facing > 0.0 && src.altitude > 0.005 && !src.overcast {
         e += src.sun_lux() * facing * tracer.open(p, src.sun, 1e4);
     }
     let from = |lamp: &Lamp| {
@@ -427,7 +445,8 @@ pub fn compute(project: &Project, settings: &Settings) -> Levels {
     let scene = mesh::build(project, &BuildOptions { fixtures: false, ..Default::default() });
     let tracer = Tracer::new(&scene);
     let (sun, altitude) = project.site.sun_direction();
-    let src = Sources { lamps: &lamps, sun, altitude };
+    let overcast = project.site.sun.overcast;
+    let src = Sources { lamps: &lamps, sun, altitude, overcast };
 
     // Lay the grids out, then trace every point.
     let mut rooms = Vec::new();
@@ -495,7 +514,7 @@ pub fn compute(project: &Project, settings: &Settings) -> Levels {
             room.max = seen.iter().copied().fold(f32::MIN, f32::max);
         }
     }
-    Levels { rooms, sun: sun_lux(altitude), sky: sky_lux(altitude), lamps: lamps.len(), seconds: crate::time::since(started) }
+    Levels { rooms, sun: src.sun_lux(), sky: src.sky_lux(), lamps: lamps.len(), seconds: crate::time::since(started) }
 }
 
 fn trace_point(tracer: &Tracer, src: &Sources, settings: &Settings, i: usize, p: [f32; 3]) -> (f32, f32) {
@@ -579,16 +598,16 @@ mod tests {
         let tracer = Tracer::new(&Scene::default());
         // 1000 lm all round is 79.6 cd: 19.9 lux at 2 m, a quarter of that at 4 m.
         let lamps = [lamp([0.0, 0.0, 2.0], 0.0, 1000.0)];
-        let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0 };
+        let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0, overcast: false };
         let s = Settings { samples: 0, ..Default::default() };
         let near = illuminance(&tracer, &src, [0.0; 3], UP, &s, 1);
         assert!((near - 19.9).abs() < 0.1, "{near}");
         let lamps = [lamp([0.0, 0.0, 4.0], 0.0, 1000.0)];
-        let far = illuminance(&tracer, &Sources { lamps: &lamps, sun: UP, altitude: -1.0 }, [0.0; 3], UP, &s, 1);
+        let far = illuminance(&tracer, &Sources { lamps: &lamps, sun: UP, altitude: -1.0, overcast: false }, [0.0; 3], UP, &s, 1);
         assert!((far - near / 4.0).abs() < 0.05, "{far}");
         // A downlight puts all of it below: 1000/π = 318 cd on its axis.
         let lamps = [lamp([0.0, 0.0, 2.0], 1.0, 1000.0)];
-        let down = illuminance(&tracer, &Sources { lamps: &lamps, sun: UP, altitude: -1.0 }, [0.0; 3], UP, &s, 1);
+        let down = illuminance(&tracer, &Sources { lamps: &lamps, sun: UP, altitude: -1.0, overcast: false }, [0.0; 3], UP, &s, 1);
         assert!((down - 79.6).abs() < 0.3, "{down}");
     }
 
@@ -597,14 +616,25 @@ mod tests {
         let tracer = Tracer::new(&Scene::default());
         let altitude = 50f32.to_radians();
         let sun = [0.0, altitude.cos(), altitude.sin()];
-        let src = Sources { lamps: &[], sun, altitude };
+        let src = Sources { lamps: &[], sun, altitude, overcast: false };
         let s = Settings { samples: 64, ..Default::default() };
         let e = illuminance(&tracer, &src, [0.0; 3], UP, &s, 3);
         let expected = sun_lux(altitude) * altitude.sin() + sky_lux(altitude);
         assert!((e / expected - 1.0).abs() < 0.01, "{e} vs {expected}");
         assert!(expected > 80_000.0 && expected < 110_000.0, "a clear summer day is about 100 000 lux: {expected}");
         // At night there is none.
-        assert_eq!(illuminance(&tracer, &Sources { lamps: &[], sun, altitude: -0.2 }, [0.0; 3], UP, &s, 3), 0.0);
+        assert_eq!(illuminance(&tracer, &Sources { lamps: &[], sun, altitude: -0.2, overcast: false }, [0.0; 3], UP, &s, 3), 0.0);
+    }
+
+    #[test]
+    fn an_overcast_sky_gives_open_ground_its_whole_light_and_no_sun() {
+        let tracer = Tracer::new(&Scene::default());
+        let altitude = 50f32.to_radians();
+        let src = Sources { lamps: &[], sun: [0.0, altitude.cos(), altitude.sin()], altitude, overcast: true };
+        let e = illuminance(&tracer, &src, [0.0; 3], UP, &Settings { samples: 4000, ..Default::default() }, 5);
+        // The brighter zenith integrates to exactly the sky's horizontal illuminance.
+        assert!((e / overcast_lux(altitude) - 1.0).abs() < 0.03, "{e} vs {}", overcast_lux(altitude));
+        assert!(e > 10_000.0 && e < 25_000.0, "a bright overcast day: {e}");
     }
 
     #[test]
@@ -613,7 +643,7 @@ mod tests {
         // A sheet over the point: opaque, then glass.
         scene.quad([[-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0]], [0.0; 2], &surface(0.5), 0.0);
         let lamps = [lamp([0.0, 0.0, 2.0], 0.0, 1000.0)];
-        let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0 };
+        let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0, overcast: false };
         let s = Settings { samples: 0, ..Default::default() };
         assert_eq!(illuminance(&Tracer::new(&scene), &src, [0.0; 3], UP, &s, 1), 0.0);
         let mut glazed = Scene::default();
@@ -632,7 +662,7 @@ mod tests {
             let mut scene = Scene::default();
             room(&mut scene, w, d, h, &surface(reflectance));
             let lamps = [lamp([2.0, 2.0, 1.25], 0.0, 3000.0)];
-            let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0 };
+            let src = Sources { lamps: &lamps, sun: UP, altitude: -1.0, overcast: false };
             let tracer = Tracer::new(&scene);
             let s = Settings { samples: 200, bounces, ..Default::default() };
             // Points spread evenly over the six faces, weighted by the area each stands for.
@@ -695,6 +725,14 @@ mod house_tests {
         let living = room(&day, "Living room").mean;
         assert!(living > 200.0 && living < 20_000.0, "{living}");
         assert!(room(&day, "Workshop").mean < living / 20.0);
+
+        // Under cloud there is no sun on the deck, and less light indoors.
+        project.site.sun.overcast = true;
+        let cloudy = compute(&project, &Settings { samples: 48, ..Default::default() });
+        assert_eq!(cloudy.sun, 0.0);
+        assert!(room(&cloudy, "Deck").mean < room(&day, "Deck").mean / 2.0);
+        assert!(room(&cloudy, "Living room").mean < room(&day, "Living room").mean);
+        project.site.sun.overcast = false;
 
         project.site.sun = SunSetting { altitude: -10.0, ..project.site.sun };
         let night = compute(&project, &Settings { samples: 48, ..Default::default() });

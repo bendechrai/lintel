@@ -25,11 +25,13 @@ pub struct Sun {
     pub azimuth: f32,
     /// Radians above the horizon.
     pub altitude: f32,
+    /// Behind cloud: no direct light or shadows.
+    pub overcast: bool,
 }
 
 impl Default for Sun {
     fn default() -> Self {
-        Sun { azimuth: -1.1, altitude: 0.85 }
+        Sun { azimuth: -1.1, altitude: 0.85, overcast: false }
     }
 }
 
@@ -430,7 +432,7 @@ fn globals(view: &Viewport, aspect: f32) -> Globals {
     // Below the horizon the sun gives nothing; keep its direction sane for the shadow map.
     let alt = view.sun.altitude.to_degrees();
     let step = |lo: f32, hi: f32| ((alt - lo) / (hi - lo)).clamp(0.0, 1.0);
-    let (sun_strength, sky_strength) = (step(-0.5, 8.0), step(-8.0, 6.0));
+    let (sun_strength, sky_strength) = (if view.sun.overcast { 0.0 } else { step(-0.5, 8.0) }, step(-8.0, 6.0));
     let sun = Sun { altitude: view.sun.altitude.max(3f32.to_radians()), ..view.sun }.direction();
     let mut lamps = [GpuLamp::zeroed(); MAX_LAMPS];
     let count = view.scene.lamps.len().min(MAX_LAMPS);

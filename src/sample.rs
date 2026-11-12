@@ -37,7 +37,7 @@ impl B {
     }
 
     fn room(&mut self, name: &str, outline: &[P2], floor: Finish) -> Room {
-        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true }
+        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }
     }
 
     fn fixture(&mut self, kind: FixtureKind, mount: Mount) -> Fixture {
@@ -243,8 +243,12 @@ pub fn house() -> Project {
     let mut hall = b.room("Entry hall", &rect(6.2, 0.0, 8.4, 4.6), Finish::colored("tile", rgb(0xd8d3c8)));
     hall.ceiling_height = Some(2.4);
     main.rooms.push(hall);
-    main.rooms.push(b.room("Living room", &rect(8.4, 0.0, 15.0, 5.2), Finish::of("oak_boards")));
-    main.rooms.push(b.room("Kitchen & dining", &[[7.4, 4.6], [8.4, 4.6], [8.4, 5.2], [15.0, 5.2], [15.0, 11.0], [7.4, 11.0]], Finish::of("laminate_boards")));
+    let mut living = b.room("Living room", &rect(8.4, 0.0, 15.0, 5.2), Finish::of("oak_boards"));
+    living.target_lux = Some(150.0);
+    main.rooms.push(living);
+    let mut kitchen = b.room("Kitchen & dining", &[[7.4, 4.6], [8.4, 4.6], [8.4, 5.2], [15.0, 5.2], [15.0, 11.0], [7.4, 11.0]], Finish::of("laminate_boards"));
+    kitchen.target_lux = Some(300.0);
+    main.rooms.push(kitchen);
     main.rooms.push(b.room("Pantry", &rect(6.2, 8.6, 7.4, 11.0), Finish::of("laminate_boards")));
     main.rooms.push(b.room("Laundry", &rect(3.0, 6.4, 6.2, 11.0), Finish::colored("tile", rgb(0xcfd4d6))));
     main.rooms.push(b.room("Workshop", &rect(0.0, 6.4, 3.0, 11.0), Finish::of("polished_concrete")));

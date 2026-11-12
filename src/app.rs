@@ -492,7 +492,7 @@ impl State {
     /// The sun as the renderer wants it: its bearing turned into the plan's axes.
     pub fn sun(&self) -> Sun {
         let (d, altitude) = self.project.site.sun_direction();
-        Sun { azimuth: d[1].atan2(d[0]), altitude }
+        Sun { azimuth: d[1].atan2(d[0]), altitude, overcast: self.project.site.sun.overcast }
     }
 
     pub fn scene(&self) -> &Scene {
