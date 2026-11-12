@@ -1,8 +1,10 @@
 //! Lintel: model a home, in plan, elevation and 3D.
 
 pub mod app;
+pub mod assistant;
 pub mod camera;
 pub mod catalog;
+pub mod chat;
 pub mod drawing;
 pub mod edit;
 pub mod export;

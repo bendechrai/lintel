@@ -236,6 +236,12 @@ fn top_bar(s: &State, th: &Th) -> El {
         .child(ghost(th, "sample", "Sample", false).on_press(|s: &mut State| s.replace_project(crate::sample::house(), None)))
         .child(ghost(th, "open", "Open…", false).on_press_tx(open_dialog))
         .child(ghost(th, "share", "Share link", false).on_press_tx(share))
+        .children(cfg!(not(target_arch = "wasm32")).then(|| {
+            ghost(th, "assistant-open", "Assistant", s.assistant.open).on_press(|s: &mut State| {
+                s.commit_editing();
+                s.assistant.open = !s.assistant.open
+            })
+        }))
         .child(button(th, "save", "Save", false).on_press_tx(|s: &mut State, tx: &mut Tx| save(s, tx, false)))
         .child(ghost(th, "theme", if s.dark { "Light" } else { "Dark" }, false).on_press(|s: &mut State| s.dark = !s.dark))
 }
@@ -645,6 +651,6 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
         .fill(th.bg)
         .child(top_bar(s, &th))
         .child(options_bar(s, &th))
-        .child(row().key("body").w_full().grow(1.0).min_h(0.0).child(toolbox(s, &th)).child(stage).child(crate::inspector::view(s, &th)))
+        .child(row().key("body").w_full().grow(1.0).min_h(0.0).child(toolbox(s, &th)).child(stage).child(if s.assistant.open { crate::chat::view(s, &th) } else { crate::inspector::view(s, &th) }))
         .child(status_bar(s, &th))
 }

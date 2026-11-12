@@ -150,6 +150,44 @@ pub struct GeoForm {
     pub request: rune::Latest<Result<crate::geo::Fetched, String>>,
 }
 
+/// The conversation with the measuring assistant.
+pub struct Assistant {
+    pub open: bool,
+    /// Your own API key, typed in for this session. Never saved, never part of a project.
+    pub key: TextEdit,
+    pub input: TextEdit,
+    pub lines: Vec<crate::assistant::Line>,
+    /// The conversation as the API takes it.
+    pub messages: Vec<serde_json::Value>,
+    pub request: rune::Latest<Result<serde_json::Value, String>>,
+    pub status: String,
+    /// Read replies aloud with the computer's voice.
+    pub speak: bool,
+    /// Requests made for the message being answered, to stop a runaway exchange.
+    rounds: usize,
+    /// Messages you have sent: each one's changes are a single undo step.
+    turns: usize,
+}
+
+impl Assistant {
+    fn new() -> Assistant {
+        Assistant { open: false, key: TextEdit::new("").secure(), input: TextEdit::new(""), lines: vec![], messages: vec![], request: rune::Latest::default(), status: String::new(), speak: false, rounds: 0, turns: 0 }
+    }
+
+    /// The key to use: the one typed in, or else the environment's.
+    pub fn api_key(&self) -> Option<String> {
+        let typed = self.key.text.trim();
+        if !typed.is_empty() {
+            return Some(typed.to_string());
+        }
+        std::env::var("ANTHROPIC_API_KEY").ok().map(|k| k.trim().to_string()).filter(|k| !k.is_empty())
+    }
+
+    pub fn busy(&self) -> bool {
+        self.request.is_pending()
+    }
+}
+
 /// Calculated light levels and how they are shown.
 pub struct LuxView {
     pub settings: crate::lux::Settings,
@@ -201,6 +239,7 @@ pub struct State {
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
     pub lux: LuxView,
+    pub assistant: Assistant,
     /// Another option's walls drawn faintly on the plan for comparison, by its name.
     pub compare: Option<String>,
     /// The paper and scale drawings are made for.
@@ -288,6 +327,7 @@ impl State {
             underlays: vec![],
             calibrate: None,
             lux: LuxView { settings: crate::lux::Settings::default(), request: rune::Latest::default(), levels: None, stale: false, show: false },
+            assistant: Assistant::new(),
             camera: Camera::default(),
             side: Side::South,
             elevation: Camera::default(),
@@ -458,6 +498,107 @@ impl State {
             self.rebuild_scene();
         }
         true
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The measuring assistant
+
+    /// Sends what is in the assistant's box.
+    pub fn ask(&mut self) {
+        let said = self.assistant.input.text.trim().to_string();
+        if said.is_empty() || self.assistant.busy() {
+            return;
+        }
+        if self.assistant.api_key().is_none() {
+            self.assistant.status = "Enter your Anthropic API key first.".into();
+            return;
+        }
+        self.assistant.input.clear();
+        self.assistant.lines.push(crate::assistant::Line { from_you: true, text: said.clone() });
+        self.assistant.messages.push(serde_json::json!({ "role": "user", "content": said }));
+        self.assistant.rounds = 0;
+        self.assistant.turns += 1;
+        self.assistant_send();
+    }
+
+    fn assistant_send(&mut self) {
+        let Some(key) = self.assistant.api_key() else { return };
+        let body = crate::assistant::request(&self.assistant.messages);
+        self.assistant.rounds += 1;
+        self.assistant.status = "Thinking…".into();
+        self.assistant.request.request((key, body), |(key, body)| crate::assistant::send(&key, &body));
+    }
+
+    /// Takes the assistant's answer, if one has landed.
+    pub fn poll_assistant(&mut self) -> bool {
+        let Some(answer) = self.assistant.request.take() else { return false };
+        self.land_assistant(answer);
+        true
+    }
+
+    /// Acts on one response from the API: shows a reply, or runs the tools it asks for and
+    /// sends their results back.
+    pub fn land_assistant(&mut self, answer: Result<serde_json::Value, String>) {
+        use crate::assistant::{Line, Turn};
+        let response = match answer {
+            Ok(r) => r,
+            Err(e) => {
+                self.assistant.status = e;
+                return;
+            }
+        };
+        self.assistant.status.clear();
+        match crate::assistant::read(&response) {
+            Turn::Reply(text) => {
+                // The whole content goes back next time, thinking included, as it came.
+                self.assistant.messages.push(serde_json::json!({ "role": "assistant", "content": response["content"] }));
+                if !text.is_empty() {
+                    if self.assistant.speak {
+                        crate::assistant::speak(&text);
+                    }
+                    self.assistant.lines.push(Line { from_you: false, text });
+                }
+            }
+            Turn::Tools(text, calls) => {
+                self.assistant.messages.push(serde_json::json!({ "role": "assistant", "content": response["content"] }));
+                if !text.is_empty() {
+                    self.assistant.lines.push(Line { from_you: false, text });
+                }
+                let changes = calls.iter().any(|(_, name, _)| name != "get_house");
+                if changes {
+                    self.checkpoint(&format!("assistant-{}", self.assistant.turns));
+                }
+                let mut level = self.level;
+                let results: Vec<serde_json::Value> = calls
+                    .iter()
+                    .map(|(id, name, input)| match crate::assistant::apply(&mut self.project, &mut level, name, input) {
+                        Ok(v) => serde_json::json!({ "type": "tool_result", "tool_use_id": id, "content": v.to_string() }),
+                        Err(e) => serde_json::json!({ "type": "tool_result", "tool_use_id": id, "content": e, "is_error": true }),
+                    })
+                    .collect();
+                if changes {
+                    self.level = level;
+                    self.selected = None;
+                    self.touch();
+                }
+                // Every result goes back in one message.
+                self.assistant.messages.push(serde_json::json!({ "role": "user", "content": results }));
+                if self.assistant.rounds >= 16 {
+                    self.assistant.status = "Stopped after many steps without an answer. Say what to do next.".into();
+                } else {
+                    self.assistant_send();
+                }
+            }
+            Turn::Stopped(why) => self.assistant.lines.push(Line { from_you: false, text: why }),
+        }
+    }
+
+    /// Starts the conversation afresh. The house stays as it is.
+    pub fn forget_conversation(&mut self) {
+        self.assistant.request.cancel();
+        self.assistant.lines.clear();
+        self.assistant.messages.clear();
+        self.assistant.status.clear();
     }
 
     /// How many point sources the lamps that are on amount to.

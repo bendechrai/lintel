@@ -44,19 +44,20 @@ are below, with what they turn into.
 | Outside | Fences and gates, retaining walls and steps, trees and planting, deck structure. |
 | Furniture | Real products by their true dimensions. |
 
-## Built so far from these
+## Built from these
 
 Sun by place and time; lamps with lumens and colour temperature; LED strips; switches linked
-to lights; light levels (clear sky); the shared link and phone viewer; tracing a plan image.
+to lights; light levels under a clear or overcast sky, with a target per room; the shared link
+and phone viewer; tracing a plan image; pictures and glTF export; named options; skirting,
+cornices, part-height finishes and wall build-up; sloped and vaulted ceilings, bulkheads and
+beams; fences, gates, retaining walls, trees and deck structure; dimensioned plans as PDF; a
+product library; the measuring assistant on your own API key.
 
-## To build, in the order I intend
+## Left open
 
-1. Light targets per room and an overcast sky.
-2. Save the view or a lux map as an image; export the house as a 3D model.
-3. Named options in one project, with a side-by-side view.
-4. Skirting, cornices and part-height finishes; then the wall build-up.
-5. Sloped and vaulted ceilings, bulkheads, beams.
-6. Fences, gates, retaining walls, outdoor steps, trees, deck posts and balustrades.
-7. Dimensioned drawings as PDF.
-8. A product library with true dimensions.
-9. The voice agent.
+- The assistant takes typed or OS-dictated speech and can read replies aloud; it does not
+  capture the microphone itself (question 4 stands for whether it should also answer
+  questions about the house).
+- Options compare on the plan, not side by side in 3D.
+- Drawings are plans; elevations go out as pictures.
+- Questions 1 to 3 and 5 onward above keep their defaults until answered.

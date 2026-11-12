@@ -105,6 +105,7 @@ fn setup(s: &mut State, waker: rune::runtime::Waker) {
     s.load_underlays();
     s.geo.request.set_waker(waker.clone());
     s.lux.request.set_waker(waker.clone());
+    s.assistant.request.set_waker(waker.clone());
     #[cfg(target_arch = "wasm32")]
     if let Some(url) = crate::share::from_query(&web::address().1) {
         s.status = format!("Fetching {url}…");
@@ -131,6 +132,7 @@ fn poll(s: &mut State, _: f64, _: &mut Tx) -> bool {
     };
     #[cfg(not(target_arch = "wasm32"))]
     let lit = s.land_light();
+    let lit = s.poll_assistant() | lit;
     let Some(answer) = s.geo.request.take() else { return lit };
     match answer {
         Ok(fetched) => {
@@ -180,6 +182,32 @@ const SCENES: &[(&str, fn(&mut State))] = &[
     ("furniture", |s| s.selected = first_of(s, |l| l.furniture.iter().find(|f| f.kind == "sofa").map(|f| Pick::Furniture(f.id)))),
     ("draw", |s| s.set_tool(Tool::Wall)),
     ("dark", |s| s.dark = true),
+    ("assistant", |s| {
+        use crate::assistant::Line;
+        s.replace_project(crate::sample::blank(), None);
+        let mut level = s.level;
+        for (name, input) in [
+            ("add_wall", serde_json::json!({ "from": [0, 0], "to": [5.2, 0], "thickness": 0.2 })),
+            ("add_wall", serde_json::json!({ "from": [5.2, 0], "to": [5.2, 4], "thickness": 0.2 })),
+            ("add_wall", serde_json::json!({ "from": [5.2, 4], "to": [0, 4], "thickness": 0.2 })),
+            ("add_wall", serde_json::json!({ "from": [0, 4], "to": [0, 0], "thickness": 0.2 })),
+            ("add_room", serde_json::json!({ "name": "Living room", "outline": [[0, 0], [5.2, 0], [5.2, 4], [0, 4]] })),
+        ] {
+            let _ = crate::assistant::apply(&mut s.project, &mut level, name, &input);
+        }
+        if let Some(w) = s.project.levels.iter().flat_map(|l| &l.walls).next().map(|w| w.id) {
+            let _ = crate::assistant::apply(&mut s.project, &mut level, "add_opening", &serde_json::json!({ "wall_id": w, "kind": "door", "at": 1.2, "width": 0.82 }));
+        }
+        s.touch();
+        s.fit_plan();
+        s.assistant.open = true;
+        s.assistant.lines = vec![
+            Line { from_you: true, text: "The living room is 5.2 by 4 metres, outside walls 200 thick.".into() },
+            Line { from_you: false, text: "I've drawn the living room, 5.2 by 4 metres. Which wall has the door, and how far is it from the nearest corner?".into() },
+            Line { from_you: true, text: "South wall. Door is 820 wide, centre 1.2 metres from the left corner.".into() },
+            Line { from_you: false, text: "Door added in the south wall. How high is the ceiling?".into() },
+        ];
+    }),
     ("elevation", |s| s.set_view(ViewMode::Elevation)),
     ("east", |s| {
         s.side = crate::app::Side::East;

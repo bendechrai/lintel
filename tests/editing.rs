@@ -494,3 +494,45 @@ fn a_piece_saved_as_a_product_places_again_at_its_true_size_and_travels_in_a_lib
     assert_eq!(other.state.project.products, rt.state.project.products);
     let _ = std::fs::remove_file(&file);
 }
+
+#[test]
+fn the_assistant_runs_the_tools_it_is_given_as_one_undo_step_and_answers_with_their_results() {
+    use serde_json::json;
+    let mut rt = app(sample::blank());
+    press(&mut rt, "assistant-open");
+    assert!(rt.find("chat-input").is_some() && rt.find("chat-key").is_some());
+    let walls = level(&rt).walls.len();
+    rt.update(|s, _| {
+        s.assistant.messages.push(json!({ "role": "user", "content": "The hall is 3 by 2 metres." }));
+        // The API asks for two walls and a look at the house, in one response.
+        s.land_assistant(Ok(json!({ "stop_reason": "tool_use", "content": [
+            { "type": "text", "text": "Drawing the hall." },
+            { "type": "tool_use", "id": "toolu_a", "name": "add_wall", "input": { "from": [0, 0], "to": [3, 0] } },
+            { "type": "tool_use", "id": "toolu_b", "name": "add_wall", "input": { "from": [3, 0], "to": [3, 2] } },
+            { "type": "tool_use", "id": "toolu_c", "name": "add_opening", "input": { "wall_id": 424242, "kind": "door", "at": 1, "width": 0.8 } }
+        ] })));
+    });
+    settle(&mut rt);
+    assert_eq!(level(&rt).walls.len(), walls + 2);
+    {
+        let m = &rt.state.assistant.messages;
+        // The assistant's turn went back as it came, then every result in one user message.
+        assert_eq!(m[1]["role"], "assistant");
+        assert_eq!(m[1]["content"][1]["id"], "toolu_a");
+        let results = m[2]["content"].as_array().unwrap();
+        assert_eq!((m[2]["role"].as_str(), results.len()), (Some("user"), 3));
+        assert_eq!(results[0]["tool_use_id"], "toolu_a");
+        assert!(results[0].get("is_error").is_none());
+        assert_eq!(results[2]["is_error"], true);
+    }
+    rt.update(|s, _| s.land_assistant(Ok(json!({ "stop_reason": "end_turn", "content": [{ "type": "text", "text": "How long is the next wall?" }] }))));
+    settle(&mut rt);
+    assert!(rt.find("chat-line-1").is_some());
+    assert_eq!(rt.state.assistant.lines.last().unwrap().text, "How long is the next wall?");
+    // Both walls came from one thing said, so one undo takes them back.
+    rt.update(|s, _| s.undo());
+    assert_eq!(level(&rt).walls.len(), walls);
+    // A failure is reported, not swallowed, and nothing is sent without a key.
+    rt.update(|s, _| s.land_assistant(Err("That API key wasn't accepted.".into())));
+    assert_eq!(rt.state.assistant.status, "That API key wasn't accepted.");
+}

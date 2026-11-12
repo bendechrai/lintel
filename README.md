@@ -157,6 +157,30 @@ size. Products live in the project, and **Export…** writes them to a library f
 project can import. Lintel ships no product data of its own: the dimensions are the ones you
 enter from the specification sheet.
 
+## Measuring assistant
+
+**Assistant** (desktop app) opens a conversation that builds the house as you read
+measurements out: "the living room is 5.2 by 4 metres; there's a door 820 wide, 1.2 metres from
+the left corner of the south wall". It asks for one measurement at a time, converts whatever
+units you use, refuses what can't be (a window wider than its wall) and tells you why. Each
+thing you say is one undo step.
+
+![The assistant drawing a room from spoken measurements](docs/assistant.png)
+
+It is Claude (`claude-opus-5-5`) on **your own Anthropic API key**, from console.anthropic.com.
+Type the key into the panel, or start Lintel with `ANTHROPIC_API_KEY` set. The key is held in
+memory for the session: it is never written to disk, a project file or a shared link. What you
+say, and a description of the walls and rooms on the level you're working on, goes from your
+computer straight to api.anthropic.com and nowhere else; usage is billed to your key.
+
+Speech: Lintel doesn't listen to the microphone itself. Click in the box and use the
+computer's own dictation (macOS: the microphone key or Fn twice; Windows: Win + H), then press
+Enter. **Speak replies** reads the answers aloud with the system voice (`say` on macOS, Windows
+speech, `spd-say` or `espeak` on Linux). The assistant can add and change walls, doors,
+windows, openings, garage doors, rooms and level heights; finishes, fixtures and furniture are
+still placed by hand. It has been tested against recorded API responses, not yet against the
+live service.
+
 ## Drawings
 
 **Drawings as PDF…** (plan view) writes a dimensioned plan of every level, one landscape page
@@ -200,7 +224,8 @@ GPU errors. Saving, opening files and the elevation fetch don't work in the brow
 
 ## Not yet
 
-L- and U-shaped stairs, dormers and valleys, wall editing in 3D, dimension lines, textures
-from photos, printing and export. Furniture is boxes.
+L- and U-shaped stairs, dormers and valleys, wall editing in 3D, elevations in the PDF,
+textures from photos, a phone room-scan import, signed installers. The assistant doesn't
+listen to the microphone itself, and isn't in the browser version.
 
 MIT.
