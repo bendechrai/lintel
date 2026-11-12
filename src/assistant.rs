@@ -426,26 +426,47 @@ pub fn read(response: &Value) -> Turn {
 /// Sends one request and returns the response body. Blocks; call it off the UI thread.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn send(key: &str, body: &Value) -> Result<Value, String> {
+    match post(key, body, true) {
+        // If the API won't take the fallback option, ask again without it rather than fail.
+        Err((400, detail)) if detail.contains("fallback") || detail.contains("beta") => {
+            let mut plain = body.clone();
+            if let Some(o) = plain.as_object_mut() {
+                o.remove("fallbacks");
+            }
+            post(key, &plain, false).map_err(|(code, detail)| explain(code, &detail))
+        }
+        other => other.map_err(|(code, detail)| explain(code, &detail)),
+    }
+}
+
+/// What to tell the person when the API answers with an error status (0: it never answered).
+pub fn explain(code: u16, detail: &str) -> String {
+    match code {
+        0 => format!("Couldn't reach api.anthropic.com: {detail}"),
+        401 | 403 => format!("That API key wasn't accepted. {detail}"),
+        429 => format!("The API is rate-limiting this key; wait a moment and send again. {detail}"),
+        400 | 404 | 413 | 422 => format!("The API rejected the request. {detail}"),
+        _ => format!("The API had a problem ({code}); try again shortly. {detail}"),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn post(key: &str, body: &Value, fallback: bool) -> Result<Value, (u16, String)> {
     let agent = ureq::AgentBuilder::new().timeout(std::time::Duration::from_secs(180)).build();
-    let sent = agent
-        .post("https://api.anthropic.com/v1/messages")
-        .set("content-type", "application/json")
-        .set("x-api-key", key.trim())
-        .set("anthropic-version", API_VERSION)
-        .set("anthropic-beta", FALLBACK_BETA)
-        .send_string(&body.to_string());
-    match sent {
-        Ok(response) => serde_json::from_str(&response.into_string().map_err(|e| e.to_string())?).map_err(|e| format!("the reply wasn't readable: {e}")),
+    let mut request = agent.post("https://api.anthropic.com/v1/messages").set("content-type", "application/json").set("x-api-key", key.trim()).set("anthropic-version", API_VERSION);
+    if fallback {
+        request = request.set("anthropic-beta", FALLBACK_BETA);
+    }
+    match request.send_string(&body.to_string()) {
+        Ok(response) => {
+            let text = response.into_string().map_err(|e| (0, e.to_string()))?;
+            serde_json::from_str(&text).map_err(|e| (0, format!("the reply wasn't readable: {e}")))
+        }
         Err(ureq::Error::Status(code, response)) => {
             let detail = response.into_string().ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| v["error"]["message"].as_str().map(str::to_string)).unwrap_or_default();
-            Err(match code {
-                401 | 403 => format!("That API key wasn't accepted. {detail}"),
-                429 => format!("The API is rate-limiting this key; wait a moment and send again. {detail}"),
-                400 | 404 | 413 | 422 => format!("The API rejected the request. {detail}"),
-                _ => format!("The API had a problem ({code}); try again shortly. {detail}"),
-            })
+            Err((code, detail))
         }
-        Err(e) => Err(format!("Couldn't reach api.anthropic.com: {e}")),
+        Err(e) => Err((0, e.to_string())),
     }
 }
 
@@ -553,5 +574,10 @@ mod tests {
         let Turn::Tools(text, calls) = read(&tools) else { panic!("tool calls") };
         assert_eq!((text.as_str(), calls.len(), calls[0].1.as_str(), calls[1].0.as_str()), ("Adding that wall.", 2, "add_wall", "toolu_2"));
         assert!(matches!(read(&json!({ "stop_reason": "refusal", "content": [] })), Turn::Stopped(_)));
+        // Errors say what to do about them.
+        assert!(explain(401, "invalid x-api-key").starts_with("That API key wasn't accepted."));
+        assert!(explain(429, "").contains("wait a moment"));
+        assert!(explain(529, "Overloaded").contains("try again shortly"));
+        assert!(explain(0, "dns error").starts_with("Couldn't reach api.anthropic.com"));
     }
 }

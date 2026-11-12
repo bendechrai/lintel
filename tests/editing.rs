@@ -574,3 +574,99 @@ fn the_3d_view_stands_the_compared_option_beside_the_one_being_edited() {
     });
     assert!(rt.state.beside.is_none() && rt.state.scene().vertices.len() == alone.0);
 }
+
+/// A small deterministic generator, so a failure can be replayed from its seed.
+struct Dice(u64);
+
+impl Dice {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n
+    }
+
+    fn between(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + (self.next() % 10_000) as f32 / 10_000.0 * (hi - lo)
+    }
+}
+
+#[test]
+fn random_clicking_dragging_and_typing_never_breaks_the_house() {
+    // LINTEL_MONKEY=40,3000 runs a longer hunt: that many seeds, that many steps each.
+    let hunt: Vec<u64> = std::env::var("LINTEL_MONKEY").ok().map(|v| v.split(',').filter_map(|n| n.parse().ok()).collect()).unwrap_or_default();
+    let seeds: Vec<u64> = match hunt.first() {
+        Some(n) => (1..=*n).map(|i| i.wrapping_mul(0x9e3779b97f4a7c15)).collect(),
+        None => vec![0x9e3779b97f4a7c15, 0xdeadbeefcafe, 42],
+    };
+    let steps = hunt.get(1).copied().unwrap_or(700);
+    let mut edits = 0;
+    for seed in seeds {
+        let mut dice = Dice(seed);
+        let mut rt = app(sample::house());
+        // The site panel can ask an elevation service for heights; keep this test off the network.
+        rt.update(|s, _| {
+            s.geo.lat.clear();
+            s.geo.lon.clear();
+        });
+        for step in 0..steps {
+            // Anywhere in the window except the file buttons at the right of the top bar.
+            let mut point = |dice: &mut Dice| {
+                let y = dice.between(0.0, SIZE.1);
+                (dice.between(0.0, if y < 46.0 { 1080.0 } else { SIZE.0 }), y)
+            };
+            match dice.below(12) {
+                0..=4 => {
+                    let at = point(&mut dice);
+                    rt.pointer_move(at.0, at.1);
+                    rt.pointer_down(at.0, at.1);
+                    rt.pointer_up(at.0, at.1);
+                }
+                5..=7 => {
+                    let (from, to) = (point(&mut dice), point(&mut dice));
+                    rt.pointer_move(from.0, from.1);
+                    rt.pointer_down(from.0, from.1);
+                    for i in 1..=4 {
+                        let t = i as f32 / 4.0;
+                        rt.pointer_move(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+                    }
+                    rt.pointer_up(to.0, to.1);
+                }
+                8 => {
+                    let at = point(&mut dice);
+                    rt.wheel(at.0, at.1, dice.between(-240.0, 240.0));
+                }
+                9 => {
+                    let keys = [Key::Escape, Key::Delete, Key::Left, Key::Up, Key::Enter, Key::Tab, Key::Command('z'), Key::Command('y'), Key::Command('d')];
+                    rt.key(KeyEvent { key: keys[dice.below(keys.len() as u64) as usize].clone(), mods: Mods::default() });
+                }
+                10 => {
+                    let texts = ["w", "m", "d", "n", "v", "3", "0", "-", ".", "2.5", "abc"];
+                    rt.key(KeyEvent { key: Key::Text(texts[dice.below(texts.len() as u64) as usize].into()), mods: Mods::default() });
+                }
+                _ => {
+                    let view = [ViewMode::Plan, ViewMode::Elevation, ViewMode::Model][dice.below(3) as usize];
+                    rt.update(move |s, _| s.set_view(view));
+                }
+            }
+            rt.frame(1.0 / 60.0);
+            if step % 50 == 49 {
+                // Whatever happened, the house is still a house: it saves, reads back the
+                // same, and builds in 3D with every number finite.
+                let p = &rt.state.project;
+                let text = serde_json::to_string(p).unwrap_or_else(|e| panic!("seed {seed:#x} step {step}: {e}"));
+                let back: Project = serde_json::from_str(&text).unwrap_or_else(|e| panic!("seed {seed:#x} step {step}: {e}"));
+                assert!(back == *p, "seed {seed:#x} step {step}: the project doesn't read back as saved");
+                let scene = lintel::mesh::build(p, &lintel::mesh::BuildOptions::default());
+                assert!(scene.vertices.iter().all(|v| v.pos.iter().all(|c| c.is_finite())), "seed {seed:#x} step {step}: a vertex is not finite");
+                assert!(scene.opaque.iter().chain(&scene.translucent).all(|i| (*i as usize) < scene.vertices.len()));
+            }
+        }
+        edits += usize::from(rt.state.project != sample::house());
+    }
+    assert!(edits > 0, "the random input never changed anything, so it tested nothing");
+}

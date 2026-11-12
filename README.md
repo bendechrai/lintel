@@ -115,7 +115,15 @@ models are 10 to 90 m coarse: they give a lot's overall fall, not its grading.
 cargo test --release
 ```
 
-`tests/editing.rs` drives the real view with presses, drags and keys. Any view renders
+`tests/editing.rs` drives the real view with presses, drags and keys, and ends with a test
+that clicks, drags and types at random across the whole window and checks the house still
+saves, reads back and builds. For a longer hunt:
+
+```bash
+LINTEL_MONKEY=30,2500 cargo test --release --test editing random
+```
+
+Any view renders
 headless (on Linux without a GPU, install `mesa-vulkan-drivers` and set
 `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json`):
 
@@ -133,6 +141,9 @@ target/release/lintel --snap out.png --scene dollhouse --size 1440x900
 | `app.rs` | Editor state, undo, files |
 | `geo.rs`, `solar.rs` | Elevation services; where the sun is |
 | `lux.rs` | Light levels: a small path tracer |
+| `drawing.rs`, `export.rs`, `share.rs` | PDF drawings; glTF and PNG; the shared link |
+| `assistant.rs`, `chat.rs` | The measuring assistant: Claude API calls, tools, and its panel |
+| `shell.rs` | Start-up for the desktop and the browser |
 
 ## Trace an existing plan
 
