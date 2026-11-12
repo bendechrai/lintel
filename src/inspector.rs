@@ -1094,8 +1094,15 @@ fn barrier(s: &State, th: &Th, lib: &Library, b: &Barrier) -> Vec<El> {
             }
         }));
     }
+    if b.kind == BarrierKind::Retaining {
+        v.push(len(s, th, "Level ground behind", "barrier-level-behind", b.level_behind, move |p, x| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.level_behind = x.clamp(0.0, 60.0)
+            }
+        }));
+    }
     v.push(text(match b.kind {
-        BarrierKind::Retaining => "Its top is level, set by the highest ground along it. It doesn't reshape the ground: set the ground's heights to match.",
+        BarrierKind::Retaining => "Its top is level, set by the highest ground along it. The ground on its uphill side is filled level to just under the top for the distance above, then banks back down; set that to 0 to leave the ground alone.",
         BarrierKind::Balustrade => "Posts, a handrail and glass. On a deck, set where it stands to the deck's floor height, or give the deck's room a balustrade.",
         _ => "Drag its ends to move them. Double-click it to add a corner.",
     }).font(SMALL).color(th.dim).wrap().mt(8.0));

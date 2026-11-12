@@ -519,3 +519,41 @@ fn a_raised_deck_gets_posts_to_the_ground_and_a_balustrade_on_its_open_edges() {
     // Near the house there are only the ends of the two side rails, not a run along the wall.
     assert!(rail.iter().filter(|p| p[1] < 11.3).all(|p| (p[0] - 8.6).abs() < 0.3 || (p[0] - 15.0).abs() < 0.3), "a balustrade runs along the house wall");
 }
+
+#[test]
+fn a_retaining_wall_holds_level_ground_behind_it_and_leaves_the_ground_in_front_alone() {
+    use crate::model::{Barrier, BarrierKind};
+    let mut project = house();
+    let terrain = project.site.terrain.clone();
+    // A wall across the fall of the site, clear of the building.
+    let wall = Barrier { level_behind: 3.0, ..BarrierKind::Retaining.new(710, vec![[-8.0, -2.0], [-3.0, -2.0]]) };
+    let fall = terrain.height([-5.5, -4.0]) - terrain.height([-5.5, 0.0]);
+    assert!(fall.abs() > 0.2, "the test site falls across this wall: {fall}");
+    // Left of a wall running east is north.
+    let up = wall.uphill(&terrain);
+    assert_eq!(up, if fall < 0.0 { 1.0 } else { -1.0 });
+    let top = wall.level_top(&terrain);
+    let before = Ground::new(&project);
+    project.site.barriers.push(wall);
+    let ground = Ground::new(&project);
+    let at = |behind: f32| [-5.5, -2.0 + up * behind];
+    // Behind it the ground is level just under the top, though that side was the higher one already.
+    for d in [0.5, 1.5, 2.5] {
+        let h = ground.natural_height(at(d));
+        assert!((h - (top - 0.05)).abs() < 0.03 || h > top - 0.05, "{d} m behind: {h} vs top {top}");
+    }
+    assert!(ground.natural_height(at(1.0)) > terrain.height(at(1.0)) + 0.3, "ground was filled");
+    // In front, past the bank, and beyond its ends it is as it was.
+    for p in [at(-1.0), at(6.0), [-1.5, -2.0 + up], [-8.8, -2.0 + up]] {
+        assert!((ground.natural_height(p) - before.natural_height(p)).abs() < 1e-4, "{p:?} changed: {} was {}, top {top}, up {up}, fill {:?}", ground.natural_height(p), before.natural_height(p), project.site.barriers.last().unwrap().fill(&terrain, p));
+    }
+    // The wall still stands on the ground it was built on, with the same level top.
+    let scene = build(&project, &BuildOptions::default());
+    let id = pick_of(&scene, Pick::Barrier(710));
+    let z: Vec<f32> = scene.vertices.iter().filter(|v| v.pick == id).map(|v| v.pos[2]).collect();
+    assert!((z.iter().cloned().fold(f32::MIN, f32::max) - top).abs() < 1e-3);
+    // Without a width it reshapes nothing, as files saved before this had it.
+    project.site.barriers[0..].iter_mut().for_each(|b| b.level_behind = 0.0);
+    assert!((Ground::new(&project).natural_height(at(1.0)) - before.natural_height(at(1.0))).abs() < 1e-4);
+    assert!(!serde_json::to_string(&project.site.barriers.last()).unwrap().contains("level_behind"));
+}

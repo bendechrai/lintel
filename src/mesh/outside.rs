@@ -55,7 +55,7 @@ fn stations(path: &[P2], bay: f32) -> Vec<(P2, P2)> {
     out
 }
 
-fn barrier(cx: &mut Ctx, ground: &Ground, b: &Barrier) {
+fn barrier(cx: &mut Ctx, project: &Project, ground: &Ground, b: &Barrier) {
     let pick = cx.scene.pick_id(Some(Pick::Barrier(b.id)));
     let s = cx.surf(&b.finish);
     let foot = |p: P2| b.base.unwrap_or_else(|| ground.natural_height(p));
@@ -63,8 +63,11 @@ fn barrier(cx: &mut Ctx, ground: &Ground, b: &Barrier) {
     let t = b.thickness.max(0.005);
     match b.kind {
         BarrierKind::Retaining => {
-            // A level top, set by the highest ground it meets; the foot goes below ground.
-            let top = stations(&b.path, 1.0).iter().map(|(p, _)| foot(*p)).fold(f32::MIN, f32::max) + h;
+            // A level top, set by the highest ground it meets as that ground was before any
+            // filling behind it; the foot goes below the ground in front.
+            let terrain = &project.site.terrain;
+            let top = b.level_top(terrain);
+            let foot = |p: P2| b.base.unwrap_or_else(|| terrain.height(p));
             let pts = stations(&b.path, 1.0);
             for w in pts.windows(2) {
                 slab(cx, w[0].0, w[1].0, t, [foot(w[0].0) - 0.3, foot(w[1].0) - 0.3], [top, top], &s, pick);
@@ -194,7 +197,7 @@ fn deck(cx: &mut Ctx, ground: &Ground, level: &Level, room: &Room) {
 
 pub fn build(cx: &mut Ctx, project: &Project, ground: &Ground, shown: &dyn Fn(usize) -> bool) {
     for b in &project.site.barriers {
-        barrier(cx, ground, b);
+        barrier(cx, project, ground, b);
     }
     for p in &project.site.plants {
         plant(cx, ground, p);

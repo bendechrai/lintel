@@ -386,7 +386,9 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
         Tool::Barrier(kind) if geom::dist(a, b) > 0.2 => {
             s.checkpoint("");
             let id = s.project.id();
-            s.project.site.barriers.push(kind.new(id, vec![a, b]));
+            // A new retaining wall holds a terrace behind it.
+            let level_behind = if kind == BarrierKind::Retaining { 3.0 } else { 0.0 };
+            s.project.site.barriers.push(Barrier { level_behind, ..kind.new(id, vec![a, b]) });
             s.show_site = true;
             s.touch();
             s.tool = Tool::Select;

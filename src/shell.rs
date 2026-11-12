@@ -295,6 +295,17 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.camera.yaw = 1.9;
         s.camera.pitch = 0.32;
     }),
+    ("terrace", |s| {
+        // A wall across the back garden, holding a level lawn above the fall.
+        s.edit("", |p| {
+            let id = p.id();
+            p.site.barriers.push(crate::model::Barrier { level_behind: 5.0, height: 1.0, ..crate::model::BarrierKind::Retaining.new(id, vec![[2.0, 21.0], [20.0, 21.0]]) });
+        });
+        s.bare = true;
+        s.set_view(ViewMode::Model);
+        s.camera.yaw = 1.2;
+        s.camera.pitch = 0.42;
+    }),
     ("dollhouse", |s| {
         s.set_view(ViewMode::Model);
         let main = s.project.levels.last().map(|l| l.id);

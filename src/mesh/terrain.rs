@@ -43,7 +43,10 @@ impl Ground {
         let mut natural = Vec::with_capacity(cols * rows);
         for r in 0..rows {
             for c in 0..cols {
-                natural.push(t.height([t.origin[0] + c as f32 * step[0], t.origin[1] + r as f32 * step[1]]));
+                let p = [t.origin[0] + c as f32 * step[0], t.origin[1] + r as f32 * step[1]];
+                // Ground filled behind a retaining wall is the ground from here on.
+                let filled = project.site.barriers.iter().filter_map(|b| b.fill(t, p)).fold(f32::MIN, f32::max);
+                natural.push(t.height(p).max(filled));
             }
         }
         // Every room digs a pit: its outline, its box, and the underside of its slab. A cell is

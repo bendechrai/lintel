@@ -184,6 +184,14 @@ pub struct Barrier {
     /// The height its foot stands at above the site datum; `None` follows the ground.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base: Option<f32>,
+    /// A retaining wall only: how far behind it, on the uphill side, the ground is filled
+    /// level to just under its top. 0 leaves the ground as it is.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub level_behind: f32,
+}
+
+fn is_zero(v: &f32) -> bool {
+    *v == 0.0
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -215,11 +223,81 @@ impl BarrierKind {
             BarrierKind::Retaining => (0.9, 0.3, Finish::of("blockwork")),
             BarrierKind::Balustrade => (1.0, 0.04, Finish::colored("aluminium", rgb(0x2f3134))),
         };
-        Barrier { id, name: self.name().into(), kind: self, path, height, thickness, finish, base: None }
+        Barrier { id, name: self.name().into(), kind: self, path, height, thickness, finish, base: None, level_behind: 0.0 }
     }
 }
 
 impl Barrier {
+    /// Points along the line no more than `bay` apart, corners and ends included.
+    fn stations(&self, bay: f32) -> Vec<P2> {
+        let mut out = Vec::new();
+        for w in self.path.windows(2) {
+            let len = ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
+            let n = (len / bay).ceil().max(1.0) as usize;
+            out.extend((0..n).map(|i| {
+                let t = i as f32 / n as f32;
+                [w[0][0] + (w[1][0] - w[0][0]) * t, w[0][1] + (w[1][1] - w[0][1]) * t]
+            }));
+        }
+        out.extend(self.path.last());
+        out
+    }
+
+    /// The level top of a retaining wall: its height over the highest ground it meets.
+    pub fn level_top(&self, terrain: &Terrain) -> f32 {
+        self.stations(1.0).iter().map(|p| self.base.unwrap_or_else(|| terrain.height(*p))).fold(f32::MIN, f32::max) + self.height.max(0.05)
+    }
+
+    /// Which side of its line the higher ground is on: 1 for the left of `path`, -1 for the
+    /// right. Level ground counts as the left.
+    pub fn uphill(&self, terrain: &Terrain) -> f32 {
+        let mut lean = 0.0;
+        for w in self.path.windows(2) {
+            let d = [w[1][0] - w[0][0], w[1][1] - w[0][1]];
+            let len = (d[0] * d[0] + d[1] * d[1]).sqrt();
+            if len < 1e-3 {
+                continue;
+            }
+            let n = [-d[1] / len, d[0] / len];
+            let mid = [(w[0][0] + w[1][0]) / 2.0, (w[0][1] + w[1][1]) / 2.0];
+            lean += (terrain.height([mid[0] + n[0], mid[1] + n[1]]) - terrain.height([mid[0] - n[0], mid[1] - n[1]])) * len;
+        }
+        if lean >= -1e-4 { 1.0 } else { -1.0 }
+    }
+
+    /// How high the ground behind a retaining wall is filled at `p`, if it is: level out to
+    /// `level_behind`, then banking back down over the next metre and a half.
+    pub fn fill(&self, terrain: &Terrain, p: P2) -> Option<f32> {
+        if self.kind != BarrierKind::Retaining || self.level_behind <= 0.0 {
+            return None;
+        }
+        const BANK: f32 = 1.5;
+        let side = self.uphill(terrain);
+        let mut best: Option<f32> = None;
+        for w in self.path.windows(2) {
+            let d = [w[1][0] - w[0][0], w[1][1] - w[0][1]];
+            let len2 = d[0] * d[0] + d[1] * d[1];
+            if len2 < 1e-6 {
+                continue;
+            }
+            let t = ((p[0] - w[0][0]) * d[0] + (p[1] - w[0][1]) * d[1]) / len2;
+            // Only square behind the wall, not round its ends.
+            if !(0.0..=1.0).contains(&t) {
+                continue;
+            }
+            let across = ((p[0] - w[0][0]) * -d[1] + (p[1] - w[0][1]) * d[0]) / len2.sqrt() * side;
+            if across >= -0.02 && across <= self.level_behind + BANK && best.is_none_or(|b| across < b) {
+                best = Some(across);
+            }
+        }
+        let across = best?;
+        let top = self.level_top(terrain) - 0.05;
+        let natural = terrain.height(p);
+        let bank = ((across - self.level_behind) / BANK).clamp(0.0, 1.0);
+        let filled = top + (natural - top) * bank;
+        (filled > natural).then_some(filled)
+    }
+
     pub fn length(&self) -> f32 {
         self.path.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum()
     }
