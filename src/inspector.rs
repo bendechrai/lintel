@@ -366,7 +366,7 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
     }
     if let Some(lit) = s.lux.levels.as_ref().and_then(|l| l.rooms.iter().find(|x| x.room == id)) {
         if let Some(t) = r.target_lux {
-            let short = lit.mean < t;
+            let short = lit.mean < t * 0.97;
             v.push(text(if short { format!("Below its target: {} of {} lux.", round_lux(lit.mean), round_lux(t)) } else { format!("Meets its target of {} lux.", round_lux(t)) }).font(VALUE).color(if short { crate::plan::hex(0xc9772b) } else { crate::plan::hex(0x2f9e7d) }).wrap());
         }
         v.push(fact(th, "Average", format!("{} lux", round_lux(lit.mean))));
@@ -827,7 +827,7 @@ fn light_rows(s: &State, th: &Th) -> Vec<El> {
                     .child(rune::el().size(10.0, 10.0).radius(2.0).fill(crate::plan::srgb(crate::lux::color(room.mean))))
                     .child(text(room.name.clone()).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
                     .child(match s.project.room(id).and_then(|r| r.target_lux) {
-                        Some(t) if room.mean < t => text(format!("{} of {} lux", round_lux(room.mean), round_lux(t))).font(VALUE).color(crate::plan::hex(0xc9772b)),
+                        Some(t) if room.mean < t * 0.97 => text(format!("{} of {} lux", round_lux(room.mean), round_lux(t))).font(VALUE).color(crate::plan::hex(0xc9772b)),
                         Some(t) => text(format!("{} lux ✓ {}", round_lux(room.mean), round_lux(t))).font(VALUE).color(crate::plan::hex(0x2f9e7d)),
                         None => text(format!("{} lux", round_lux(room.mean))).font(VALUE).color(th.text),
                     }),

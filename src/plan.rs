@@ -655,7 +655,7 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
         match s.lux.levels.as_ref().filter(|_| s.lux.show).and_then(|l| l.rooms.iter().find(|x| x.room == r.id)) {
             Some(lit) => {
                 let text = match r.target_lux {
-                    Some(t) if lit.mean < t => format!("{} of {} lux", crate::widgets::round_lux(lit.mean), crate::widgets::round_lux(t)),
+                    Some(t) if lit.mean < t * 0.97 => format!("{} of {} lux", crate::widgets::round_lux(lit.mean), crate::widgets::round_lux(t)),
                     _ => format!("{} lux", crate::widgets::round_lux(lit.mean)),
                 };
                 d.label(add(c, [0.0, -d.px(8.0)]), text, SMALL, ink.text)
