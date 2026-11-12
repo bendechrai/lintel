@@ -347,6 +347,19 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.delete_selected();
         s.edit("", |p| p.option = "Open-plan living".into());
     }),
+    ("beside", |s| {
+        s.branch_option();
+        let wall = s.active().and_then(|l| l.walls.iter().find(|w| w.a == [8.4, 0.0]).map(|w| w.id));
+        s.select(wall.map(Pick::Wall));
+        s.delete_selected();
+        s.edit("", |p| p.option = "Open-plan living".into());
+        let main = s.project.levels.last().map(|l| l.id);
+        s.set_options(|o| {
+            o.top_level = main;
+            o.terrain = false;
+        });
+        s.set_view(ViewMode::Model);
+    }),
     ("kitchen", |s| {
         s.bare = true;
         s.set_view(ViewMode::Model);

@@ -536,3 +536,30 @@ fn the_assistant_runs_the_tools_it_is_given_as_one_undo_step_and_answers_with_th
     rt.update(|s, _| s.land_assistant(Err("That API key wasn't accepted.".into())));
     assert_eq!(rt.state.assistant.status, "That API key wasn't accepted.");
 }
+
+#[test]
+fn the_3d_view_stands_the_compared_option_beside_the_one_being_edited() {
+    let mut rt = app(sample::house());
+    rt.update(|s, _| s.set_view(ViewMode::Model));
+    settle(&mut rt);
+    let alone = (rt.state.scene().vertices.len(), rt.state.scene().bounds);
+    assert!(rt.find("beside-theirs").is_none());
+    rt.update(|s, _| s.branch_option());
+    settle(&mut rt);
+    let s = &rt.state;
+    let b = s.beside.as_ref().expect("the option it was branched from is alongside");
+    // Two whole houses, clear of each other, and only this one can be picked.
+    assert_eq!(s.scene().vertices.len(), alone.0 * 2);
+    assert!(b.theirs.0[0] > b.ours.1[0] + 1.0, "the other house stands clear to the east");
+    assert!(s.scene().bounds.1[0] > alone.1.1[0] + 10.0);
+    assert!(s.scene().vertices[alone.0..].iter().all(|v| v.pick == 0.0));
+    assert!(rt.find("beside-ours").is_some() && rt.find("beside-theirs").is_some());
+    // An elevation shows one house; so does 3D once the comparison is dropped.
+    rt.update(|s, _| s.set_view(ViewMode::Elevation));
+    assert_eq!(rt.state.scene().vertices.len(), alone.0);
+    rt.update(|s, _| {
+        s.set_view(ViewMode::Model);
+        s.set_compare(None);
+    });
+    assert!(rt.state.beside.is_none() && rt.state.scene().vertices.len() == alone.0);
+}

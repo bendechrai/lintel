@@ -58,6 +58,5 @@ product library; the measuring assistant on your own API key.
 - The assistant takes typed or OS-dictated speech and can read replies aloud; it does not
   capture the microphone itself (question 4 stands for whether it should also answer
   questions about the house).
-- Options compare on the plan, not side by side in 3D.
 - Drawings are plans and elevations; sections go out as pictures.
 - Questions 1 to 3 and 5 onward above keep their defaults until answered.

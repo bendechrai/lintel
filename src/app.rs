@@ -11,7 +11,7 @@ use crate::geom;
 use crate::gfx::{Host, Sun, Viewport};
 use crate::mesh::{self, BuildOptions};
 use crate::model::*;
-use crate::scene::Scene;
+use crate::scene::{Scene, Vertex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewMode {
@@ -150,6 +150,13 @@ pub struct GeoForm {
     pub request: rune::Latest<Result<crate::geo::Fetched, String>>,
 }
 
+/// Two options standing side by side in the 3D view: the other's name, and where each is.
+pub struct Beside {
+    pub name: String,
+    pub ours: ([f32; 3], [f32; 3]),
+    pub theirs: ([f32; 3], [f32; 3]),
+}
+
 /// The conversation with the measuring assistant.
 pub struct Assistant {
     pub open: bool,
@@ -242,6 +249,8 @@ pub struct State {
     pub assistant: Assistant,
     /// Another option's walls drawn faintly on the plan for comparison, by its name.
     pub compare: Option<String>,
+    /// Set while the 3D view shows the compared option next to this one.
+    pub beside: Option<Beside>,
     /// The paper and scale drawings are made for.
     pub sheet: crate::drawing::Sheet,
     /// Where to save a picture of the 3D view, while one is being taken.
@@ -323,6 +332,7 @@ impl State {
             capture: None,
             sheet: crate::drawing::Sheet { paper: crate::drawing::Paper::A3, scale: None },
             compare: None,
+            beside: None,
             images: None,
             underlays: vec![],
             calibrate: None,
@@ -640,6 +650,27 @@ impl State {
     pub fn rebuild_scene(&mut self) {
         let mut scene = mesh::build(&self.project, &self.options);
         self.light_tiles(&mut scene);
+        self.beside = None;
+        // In 3D, the option being compared stands next to this one, to the east.
+        let other = self.compare.as_ref().filter(|_| self.view == ViewMode::Model).and_then(|name| self.project.others.iter().find(|o| o.option == *name));
+        if let Some(other) = other {
+            let theirs = mesh::build(other, &self.options);
+            let ours = scene.bounds;
+            let ground = if self.options.terrain { self.project.site.terrain.size()[0].max(other.site.terrain.size()[0]) } else { 0.0 };
+            let dx = ground.max(ours.1[0] - ours.0[0]).max(theirs.bounds.1[0] - theirs.bounds.0[0]) + 3.0;
+            let base = scene.vertices.len() as u32;
+            // Only the house being edited can be picked.
+            scene.vertices.extend(theirs.vertices.iter().map(|v| Vertex { pos: [v.pos[0] + dx, v.pos[1], v.pos[2]], pick: 0.0, ..*v }));
+            scene.opaque.extend(theirs.opaque.iter().map(|i| i + base));
+            scene.translucent.extend(theirs.translucent.iter().map(|i| i + base));
+            let east = |p: [f32; 3]| [p[0] + dx, p[1], p[2]];
+            scene.lamps.extend(theirs.lamps.iter().map(|l| crate::scene::Lamp { pos: east(l.pos), room: (east(l.room.0), east(l.room.1)), ..*l }));
+            let there = (east(theirs.bounds.0), east(theirs.bounds.1));
+            if there.0[0] <= there.1[0] {
+                scene.bounds = (std::array::from_fn(|i| ours.0[i].min(there.0[i])), std::array::from_fn(|i| ours.1[i].max(there.1[i])));
+                self.beside = Some(Beside { name: other.option.clone(), ours, theirs: there });
+            }
+        }
         self.scene = Arc::new(scene);
         self.scene_revision += 1;
         self.stale = false;
@@ -659,8 +690,11 @@ impl State {
         self.view = view;
         self.drag = DragOp::Idle;
         self.cursor = None;
-        if view != ViewMode::Plan && self.stale {
+        if view != ViewMode::Plan && (self.stale || self.compare.is_some()) {
             self.rebuild_scene();
+            if self.beside.is_some() {
+                self.camera.frame(self.scene.bounds);
+            }
         }
         if view == ViewMode::Elevation {
             self.aim_elevation(false);
@@ -994,10 +1028,22 @@ impl State {
         self.linking = None;
         self.level = self.project.levels.get(storey).or(self.project.levels.last()).map(|l| l.id).unwrap_or(0);
         if self.compare.as_deref() == Some(self.project.option.as_str()) {
-            self.compare = None;
+            self.set_compare(None);
         }
         self.lux.levels = None;
         self.load_underlays();
+    }
+
+    /// Chooses the option to compare against: drawn in orange under the plan, and standing
+    /// beside this one in 3D.
+    pub fn set_compare(&mut self, name: Option<String>) {
+        self.compare = name;
+        if self.view != ViewMode::Plan {
+            self.rebuild_scene();
+            if self.view == ViewMode::Model {
+                self.camera.frame(self.scene.bounds);
+            }
+        }
     }
 
     fn storey(&self) -> usize {
@@ -1020,7 +1066,7 @@ impl State {
         let from = self.project.option.clone();
         self.edit("", |p| p.branch_option(&name));
         self.after_option_change(storey);
-        self.compare = Some(from);
+        self.set_compare(Some(from));
         self.status = format!("“{name}” starts as a copy. Change it freely: the other options are untouched.");
     }
 

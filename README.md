@@ -145,8 +145,11 @@ is, not the picture, so a shared link doesn't carry it.
 
 **New option from this** in the project panel copies the house into a named option you can
 change freely while the original stays as it was. Switch between options with a click; the
-option you came from is drawn in orange under the plan so the changes stand out. Options
-live in the same project file and travel in a shared link.
+option you came from is drawn in orange under the plan so the changes stand out, and in the
+3D view it stands next to the one you're editing, each under its name. Options live in the
+same project file and travel in a shared link.
+
+![Two options side by side in 3D](docs/beside.png)
 
 ## Your own products
 

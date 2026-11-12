@@ -562,7 +562,18 @@ fn viewport(s: &State, th: &Th, size: [f32; 2]) -> El {
         let title = format!("{} elevation{}", s.side.name(), if s.section.is_some() { " · section" } else { "" });
         wrap = wrap.child(text(title).font(TITLE).color(plan::hex(0x23262b)).align(Align::End).w(300.0).absolute(size[0] - 316.0, 12.0).inert());
     }
-    let _ = th;
+    if let (ViewMode::Model, Some(b)) = (s.view, &s.beside) {
+        // A name over each house.
+        for (name, (lo, hi), editing) in [(s.project.option.clone(), b.ours, true), (b.name.clone(), b.theirs, false)] {
+            if let Some(p) = s.camera.project([(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, hi[2] + 0.8], size) {
+                let label = if editing { format!("{name} · editing") } else { name };
+                let w = crate::drawing::text_width(&label, 12.0) * 1.15 + 20.0;
+                wrap = wrap.child(
+                    row().key(if editing { "beside-ours" } else { "beside-theirs" }).absolute((p[0] - w / 2.0).clamp(4.0, (size[0] - w - 4.0).max(4.0)), (p[1] - 24.0).clamp(4.0, (size[1] - 28.0).max(4.0))).w(w).h(24.0).radius(12.0).center().fill(if editing { th.accent } else { plan::hex(0xffffff).alpha(0.9) }).child(text(label).font(VALUE).color(if editing { th.on_accent } else { plan::hex(0x23262b) })).inert(),
+                );
+            }
+        }
+    }
     wrap
 }
 

@@ -1019,7 +1019,7 @@ fn option_rows(s: &State, th: &Th) -> Vec<El> {
             .border(1.0, if active { th.accent } else { th.border })
             .hover(th.hover)
             .child(text(name.to_string()).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
-            .child(text(if active { "editing" } else if compared { "shown in orange" } else { "" }).font(SMALL).color(th.dim))
+            .child(text(if active { "editing" } else if compared { "compared" } else { "" }).font(SMALL).color(th.dim))
     };
     v.push(line("option-current".into(), &p.option, true, false));
     for (i, other) in p.others.iter().enumerate() {
@@ -1035,7 +1035,7 @@ fn option_rows(s: &State, th: &Th) -> Vec<El> {
     if !p.others.is_empty() {
         let mut choices: Vec<(&str, Option<String>)> = vec![("Nothing", None)];
         choices.extend(p.others.iter().map(|o| (o.option.as_str(), Some(o.option.clone()))));
-        v.push(choice(th, "Compare with", "option-compare", &s.compare, &choices, |s: &mut State, x: Option<String>| s.compare = x));
+        v.push(choice(th, "Compare with", "option-compare", &s.compare, &choices, |s: &mut State, x: Option<String>| s.set_compare(x)));
     }
     let mut buttons = row().w_full().gap(6.0).mt(4.0).flex_wrap().child(button(th, "option-branch", "New option from this", false).on_press(|s: &mut State| s.branch_option()));
     if !p.others.is_empty() {
