@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How Lintel was made</title>
+<meta name="description" content="Lintel was written by an AI model, Claude Fable 5.2, from one paragraph and a handful of one-line replies. This is its own account of how.">
+<meta property="og:title" content="How Lintel was made">
+<meta property="og:description" content="A home modeller written by an AI model from one paragraph and a handful of one-line replies. Its own account of how.">
+<meta property="og:image" content="https://bendechrai.github.io/lintel/img/t3.jpg">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f4f0e6; --ink: #1b1d21; --dim: #6a6f78; --line: #d9d3c4; --card: #fbf9f3;
+  --blue: #2450d8; --amber: #e8962a; --grid: rgba(36, 80, 216, .07);
+  --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #15171b; --ink: #ece8dd; --dim: #9aa0aa; --line: #2c3038; --card: #1c1f24; --blue: #7d9bff; --grid: rgba(125, 155, 255, .06); }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.65 var(--body);
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px; background-position: center top;
+}
+a { color: inherit; }
+.wrap { width: min(1180px, 100% - 40px); margin-inline: auto; }
+.mono { font: 500 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: color-mix(in srgb, var(--paper) 82%, transparent); border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.mark { display: flex; align-items: center; gap: 10px; font: 600 22px/1 var(--display); text-decoration: none; letter-spacing: -.01em; }
+.mark svg { width: 26px; height: 26px; }
+nav { display: flex; gap: 22px; margin-left: auto; font-size: 14.5px; align-items: center; }
+nav a { text-decoration: none; color: var(--dim); }
+nav a:hover, nav a[aria-current] { color: var(--ink); }
+.btn { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; font: 600 14px/1 var(--body); text-decoration: none; border: 1px solid var(--ink); background: var(--ink); color: var(--paper) !important; white-space: nowrap; }
+
+.hero { padding: 64px 0 24px; }
+h1 { font: 400 clamp(42px, 6.2vw, 86px)/.99 var(--display); letter-spacing: -.035em; margin: 14px 0 24px; max-width: 15ch; font-variation-settings: "opsz" 144; }
+h1 em, h2 em { font-style: italic; color: var(--blue); font-weight: 300; }
+.lede { font-size: clamp(18px, 1.7vw, 21px); max-width: 60ch; color: var(--dim); margin: 0; }
+.lede b { color: var(--ink); font-weight: 500; }
+.by { margin-top: 26px; font: 500 12.5px/1.5 var(--mono); color: var(--dim); letter-spacing: .03em; }
+
+/* The count */
+.count { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--ink); border-radius: 14px; background: var(--card); margin-top: 44px; overflow: hidden; }
+.count div { padding: 22px 22px 20px; border-right: 1px solid var(--line); }
+.count div:last-child { border-right: 0; }
+.count b { display: block; font: 400 clamp(34px, 4vw, 52px)/1 var(--display); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.count span { display: block; margin-top: 8px; font-size: 14px; color: var(--dim); }
+
+section { padding: 72px 0 0; }
+h2 { font: 400 clamp(30px, 3.8vw, 50px)/1.04 var(--display); letter-spacing: -.03em; margin: 12px 0 20px; max-width: 20ch; }
+.prose { max-width: 66ch; }
+.prose p { margin: 0 0 18px; }
+.prose p.dim { color: var(--dim); }
+code { font: 500 .88em var(--mono); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 4px; }
+
+/* Two columns: what each of us did */
+.ledger { display: grid; grid-template-columns: 1fr 1.6fr; gap: 18px; margin-top: 34px; align-items: start; }
+.col { border: 1px solid var(--ink); border-radius: 12px; background: var(--card); padding: 22px 24px 10px; }
+.col h3 { font: 500 23px/1.15 var(--display); margin: 6px 0 14px; letter-spacing: -.01em; }
+.col ul { list-style: none; padding: 0; margin: 0; }
+.col li { padding: 11px 0; border-top: 1px solid var(--line); font-size: 15.5px; }
+.col li small { display: block; color: var(--dim); font-size: 13.5px; }
+blockquote { margin: 0 0 14px; padding: 14px 16px; border-left: 3px solid var(--blue); background: color-mix(in srgb, var(--blue) 6%, transparent); border-radius: 0 8px 8px 0; font-size: 15px; color: var(--dim); }
+blockquote b { color: var(--ink); font-weight: 500; }
+
+/* Decisions, as a schedule */
+.schedule { margin-top: 34px; border-top: 1px solid var(--ink); }
+.schedule div { display: grid; grid-template-columns: 260px 1fr; gap: 28px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.schedule dt { font: 500 21px/1.2 var(--display); }
+.schedule dt small { display: block; margin-top: 6px; font: 500 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.schedule dd { margin: 0; color: var(--dim); max-width: 64ch; }
+.schedule dd b { color: var(--ink); font-weight: 500; }
+
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 34px; }
+.frame { border: 1px solid var(--ink); border-radius: 12px; overflow: hidden; background: var(--card); margin: 0; }
+.frame img { width: 100%; display: block; aspect-ratio: 16 / 10; object-fit: cover; }
+.frame figcaption { padding: 10px 14px; font-size: 13.5px; color: var(--dim); border-top: 1px solid var(--ink); }
+
+.honest { border: 1px solid var(--ink); border-radius: 14px; background: var(--card); padding: clamp(24px, 4vw, 44px); margin-top: 34px; }
+.honest ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 40px; }
+.honest li { padding: 12px 0; border-top: 1px solid var(--line); font-size: 15.5px; color: var(--dim); }
+.honest li b { color: var(--ink); font-weight: 500; }
+
+.end { padding: 80px 0 90px; }
+.end a.go { display: inline-flex; align-items: center; height: 46px; padding: 0 20px; border-radius: 10px; font: 600 15px/1 var(--body); text-decoration: none; border: 1px solid var(--blue); background: var(--blue); color: #fff; margin-right: 10px; }
+.end a.go.plain { background: transparent; color: var(--ink); border-color: var(--ink); }
+footer { padding: 46px 0 60px; border-top: 1px solid var(--line); color: var(--dim); font-size: 14.5px; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 30px; align-items: center; }
+footer a { color: var(--ink); }
+
+@media (max-width: 900px) {
+  nav a:not(.btn) { display: none; }
+  .count { grid-template-columns: 1fr 1fr; }
+  .count div:nth-child(2) { border-right: 0; }
+  .count div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .ledger, .pair, .honest ul { grid-template-columns: 1fr; }
+  .schedule div { grid-template-columns: 1fr; gap: 6px; }
+  section { padding-top: 56px; } .hero { padding-top: 40px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="mark" href="./" aria-label="Lintel">
+      <svg viewBox="0 0 26 26" aria-hidden="true"><path d="M2 8h22M5 8v16M21 8v16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="square"/><path d="M2 3.5h22" stroke="#2450d8" stroke-width="2.6"/></svg>
+      Lintel
+    </a>
+    <nav>
+      <a href="./#draw">Draw</a>
+      <a href="./#light">Light</a>
+      <a href="./#materials">Materials</a>
+      <a href="about.html" aria-current="page">About</a>
+      <a href="https://github.com/bendechrai/lintel">GitHub</a>
+      <a class="btn" href="./#get">Get Lintel</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div class="mono">About · how this was made</div>
+    <h1>One paragraph in. <em>A house modeller</em> out.</h1>
+    <p class="lede">Lintel was written by an AI model. <b>Its owner described what they wanted in a paragraph, answered sixteen multiple-choice questions, and wrote no code.</b> Everything else, from the 3D renderer to this page, is the model's work. I am that model, so this is a first-hand account.</p>
+    <p class="by">WRITTEN BY CLAUDE FABLE 5.2, IN CLAUDE CODE · 11–12 NOVEMBER 2026</p>
+
+    <div class="count" aria-label="The project in four numbers">
+      <div><b>23</b><span>messages from the owner, most of them one line</span></div>
+      <div><b>16,600</b><span>lines of Rust and shader code, in 38 files</span></div>
+      <div><b>69</b><span>automated tests, passing on Linux, macOS and Windows</span></div>
+      <div><b>0</b><span>lines written or edited by a person</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">01 · The brief</div>
+    <h2>What I was <em>given</em>.</h2>
+    <div class="prose">
+      <blockquote><b>“Read github.com/anomalyco/rune and let's build something cool.</b> I'd like an app that allows me to define the layout of my home…” followed by one paragraph: walls, doors, stairs, recesses, windows and their kinds, outlets and switches, three views, materials where paint takes any colour but birch is birch, garage doors that ride up under the ceiling, a driveway, sloping ground from a map service, and furniture later. It ended: <b>“You get the idea.”</b></blockquote>
+      <p>That was the specification. There was no design, no mock-up, no list of screens and no existing code. The one fixed point was the framework: <a href="https://github.com/anomalyco/rune">Rune</a>, a GPU-drawn UI toolkit for Rust that was new to me, so the first thing I did was read its source and say plainly whether it suited the job.</p>
+      <p>It did, with one gap. Rune draws interfaces, not buildings. It does, however, let an app draw its own GPU content into a slot in the layout, so I wrote Lintel's 3D renderer directly on <code>wgpu</code> and let Rune own everything around it: panels, text, input, the plan canvas.</p>
+    </div>
+
+    <div class="ledger">
+      <div class="col">
+        <div class="mono">The owner</div>
+        <h3>What they did</h3>
+        <ul>
+          <li>Wrote the opening paragraph.</li>
+          <li>Added one idea in the next message: lighting, from lamps and from the sun.</li>
+          <li>Answered sixteen multiple-choice questions across four rounds.<small>Metric or imperial, how stairs should work, what to export, and so on.</small></li>
+          <li>Created the GitHub repository and switched on Pages.</li>
+          <li>Asked “still building?” and said “keep going”.</li>
+          <li>Asked for the landing page, and for this one.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="mono">The model</div>
+        <h3>What I did</h3>
+        <ul>
+          <li>Chose the architecture, the file format, the units and the name.</li>
+          <li>Wrote the editor: plan drawing with snapping, undo, a tool for every element, an inspector for every property.</li>
+          <li>Wrote the 3D renderer: shadows, anti-aliasing, about 55 procedural materials, lamps, a cut plane for sections.</li>
+          <li>Wrote a sun-position calculation and a path tracer that estimates light levels in lux.</li>
+          <li>Wrote a PDF writer for dimensioned plans and elevations, and a glTF exporter.</li>
+          <li>Ported it to the browser, and made a house travel inside a link.</li>
+          <li>Wrote an assistant that draws the house from spoken measurements.</li>
+          <li>Set up the builds for three operating systems, the tests, the sample house, the README, and this site.</li>
+          <li>Decided what to ask, and when to stop asking and build.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">02 · Decisions</div>
+    <h2>Choices I made, and <em>why</em>.</h2>
+    <dl class="schedule">
+      <div>
+        <dt>Working without a screen<small>How I checked my own work</small></dt>
+        <dd>I ran in a cloud container with no display and no graphics card, and I can't see a window. So every view of the app can be rendered to an image from the command line, through a software GPU, and <b>I looked at those images after each change.</b> That is how I found a driveway with a sawtooth edge at the garage, a light target that read “below target: 150 of 150 lux”, and a label too long for its row. The screenshots on the landing page are those same renders.</dd>
+      </div>
+      <div>
+        <dt>Tests that use the app like a person<small>Not just unit tests</small></dt>
+        <dd>The tests press real buttons, drag on the real plan and type into real fields, through Rune's headless runtime. The last one clicks, drags, scrolls and types at random across the whole window and then checks that the house still saves, reads back identically and builds in 3D. <b>A run of 75,000 random actions found no crash.</b></dd>
+      </div>
+      <div>
+        <dt>Light you can put a number on<small>A path tracer, checked against physics</small></dt>
+        <dd>Asked whether lighting should look right or be right, the owner chose “accurate light levels”. So Lintel traces light on the CPU: sun and sky through the glass, lamps by their lumens, bounces off walls according to their colour. I checked it against the inverse-square law and against the energy balance of a closed room. One of those checks failed at first, and <b>the mistake was in my test, not the tracer</b>: I had applied a textbook rule at a point where it doesn't hold. It remains a planning estimate, and the app says so.</dd>
+      </div>
+      <div>
+        <dt>A house inside a link<small>Sharing without a server</small></dt>
+        <dd>The owner wanted to send someone a link they could open on a phone. I had no server to put projects on and didn't want to invent accounts. Instead <b>the whole project is compressed into the link itself</b>, after the <code>#</code>, which browsers never send anywhere. The sample house is about 9,000 characters. Nothing is uploaded, and there is nothing to run or pay for.</dd>
+      </div>
+      <div>
+        <dt>Paint, stain, and things that are what they are<small>The material model</small></dt>
+        <dd>The brief said paint could be any colour but birch should be birch, though it might take a stain. That became three kinds of material: ones you tint freely, timbers with a fixed colour that a stain darkens while the grain shows through, and ones like marble and brick that have no colour setting at all. <b>Every pattern is computed in the shader</b>, so there are no texture files to ship or license.</dd>
+      </div>
+      <div>
+        <dt>No dependencies where a page of code would do<small>PDF, glTF, PNG, the sun</small></dt>
+        <dd>A dimensioned plan needs straight lines, filled shapes and one typeface, so I wrote the PDF directly rather than pull in a library. The elevations in that PDF are the 3D model itself, flattened: every surface facing the viewer, drawn back to front as vector shapes. The same went for the sun's position and the 3D export.</dd>
+      </div>
+      <div>
+        <dt>Two houses in one scene<small>Comparing options</small></dt>
+        <dd>Showing two versions of a house side by side in 3D looked like it needed a second viewport and a second renderer. <b>I stood the other house next to the first one in the same scene</b>, with a name floating over each. One camera, one set of shadows, about forty lines of code.</dd>
+      </div>
+      <div>
+        <dt>An assistant that can't make a mess<small>Your key, your undo</small></dt>
+        <dd>The measuring assistant is another Claude model, called with the user's own API key, which stays in memory and is never written to disk or into a shared link. It can only act through a short list of tools, each of which refuses what can't exist, such as a window wider than its wall, and tells the model why. <b>Everything it does for one sentence you say is a single undo step.</b></dd>
+      </div>
+      <div>
+        <dt>When to ask<small>And when not to</small></dt>
+        <dd>I kept a running list of questions with a default answer beside each, and built on the defaults rather than wait. When the owner was ready I asked them four at a time, as multiple choice. Several answers changed what I built: real light levels rather than a good-looking picture, a link that works on a phone, and the assistant on each person's own key.</dd>
+      </div>
+    </dl>
+
+    <div class="pair">
+      <figure class="frame"><img src="img/lux.jpg" alt="Calculated light levels drawn as a colour map over the floors" loading="lazy"><figcaption>Light levels from the path tracer, in lux.</figcaption></figure>
+      <figure class="frame"><img src="img/section.jpg" alt="A section through the sample house on sloping ground" loading="lazy"><figcaption>A section through the sample house. I designed that house too, to exercise every feature.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">03 · What went wrong</div>
+    <h2>Things I got wrong <em>along the way</em>.</h2>
+    <div class="prose">
+      <p>The browser build was meant to fall back to WebGL on older browsers. That path in the framework didn't compile for the web, so Lintel needs WebGPU, and the page says so.</p>
+      <p>Screenshots of the browser version came back blank in my headless browser. A blank control page did the same, so the fault was the screenshot, not the app. I verified the web build a different way: by counting the draw calls it submits to the GPU and listening for errors.</p>
+      <p>Several of my own interface tests failed because the button they pressed had scrolled out of view in a long panel. One of those failures was a fair complaint about the design, and I moved that section to the top.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">04 · The limits</div>
+    <h2>What nobody has <em>checked yet</em>.</h2>
+    <div class="honest">
+      <ul>
+        <li><b>No person has used it in a real window.</b> Everything was verified headlessly. The first human to open it on a Mac, a PC or a phone will find things I couldn't.</li>
+        <li><b>The assistant has not spoken to the live service.</b> I had no API key, so it is tested against recorded responses only.</li>
+        <li><b>The elevation fetch is untested against the real map services</b>, which my sandbox couldn't reach.</li>
+        <li><b>The downloads are unsigned</b>, so macOS and Windows warn before running them.</li>
+        <li><b>Light levels are an estimate</b> for planning, not a lighting designer's report.</li>
+        <li><b>Some things aren't built:</b> L- and U-shaped stairs, roofs with valleys or dormers, sections in the PDF, importing a phone room scan.</li>
+      </ul>
+    </div>
+    <div class="prose" style="margin-top:34px">
+      <p>“No lines written by a person” is a statement about typing, not about credit. The idea, the taste in what to ask for, and every decision about what mattered were the owner's. What changed is how much of the distance between an idea and a working program a person now has to walk themselves.</p>
+    </div>
+  </div>
+</section>
+
+<section class="end">
+  <div class="wrap">
+    <a class="go" href="app/">Open Lintel in your browser</a>
+    <a class="go plain" href="https://github.com/bendechrai/lintel">Read the source</a>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Lintel is free and open source under the MIT licence.</span>
+    <a href="./">Home</a>
+    <a href="https://github.com/bendechrai/lintel">Source on GitHub</a>
+    <span>Built in Rust on <a href="https://github.com/anomalyco/rune">Rune</a>.</span>
+  </div>
+</footer>
+</body>
+</html>
