@@ -781,6 +781,52 @@ fn underlay_rows(s: &State, th: &Th) -> Vec<El> {
     v
 }
 
+/// The versions of the house kept in this project.
+fn option_rows(s: &State, th: &Th) -> Vec<El> {
+    let p = &s.project;
+    let mut v = vec![section(th, "Options")];
+    let line = |key: String, name: &str, active: bool, compared: bool| {
+        row()
+            .key(key)
+            .w_full()
+            .h(28.0)
+            .px(8.0)
+            .gap(8.0)
+            .radius(6.0)
+            .center_y()
+            .fill(if active { th.accent.alpha(0.14) } else { th.field })
+            .border(1.0, if active { th.accent } else { th.border })
+            .hover(th.hover)
+            .child(text(name.to_string()).font(VALUE).color(th.text).grow(1.0).min_w(0.0).truncate())
+            .child(text(if active { "editing" } else if compared { "shown in orange" } else { "" }).font(SMALL).color(th.dim))
+    };
+    v.push(line("option-current".into(), &p.option, true, false));
+    for (i, other) in p.others.iter().enumerate() {
+        let name = other.option.clone();
+        let compared = s.compare.as_deref() == Some(name.as_str());
+        v.push(line(format!("option-{i}"), &name, false, compared).on_press(move |s: &mut State| s.switch_option(i)));
+    }
+    v.push(name(s, th, "Name", "option-name", &p.option, on_project("", |p: &mut Project, t: String| {
+        if !t.is_empty() && !p.others.iter().any(|o| o.option == t) {
+            p.option = t
+        }
+    })));
+    if !p.others.is_empty() {
+        let mut choices: Vec<(&str, Option<String>)> = vec![("Nothing", None)];
+        choices.extend(p.others.iter().map(|o| (o.option.as_str(), Some(o.option.clone()))));
+        v.push(choice(th, "Compare with", "option-compare", &s.compare, &choices, |s: &mut State, x: Option<String>| s.compare = x));
+    }
+    let mut buttons = row().w_full().gap(6.0).mt(4.0).flex_wrap().child(button(th, "option-branch", "New option from this", false).on_press(|s: &mut State| s.branch_option()));
+    if !p.others.is_empty() {
+        buttons = buttons.child(button(th, "option-remove", "Remove this option", false).on_press(|s: &mut State| s.remove_option()));
+    }
+    v.push(buttons);
+    if p.others.is_empty() {
+        v.push(text("Keep the house as it is and try a change beside it: a new option is a full copy you can alter freely.").font(SMALL).color(th.dim).wrap());
+    }
+    v
+}
+
 fn light_rows(s: &State, th: &Th) -> Vec<El> {
     let lux = &s.lux;
     let busy = lux.request.is_pending();
@@ -1033,6 +1079,8 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
         });
         v.push(row().w_full().gap(4.0).pl(104.0).children(chips));
     }
+
+    v.extend(option_rows(s, th));
 
     v.push(section(th, "Levels"));
     for l in p.levels.iter().rev() {

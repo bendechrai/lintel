@@ -195,6 +195,8 @@ pub struct State {
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
     pub lux: LuxView,
+    /// Another option's walls drawn faintly on the plan for comparison, by its name.
+    pub compare: Option<String>,
     /// Where to save a picture of the 3D view, while one is being taken.
     pub capture: Option<PathBuf>,
     /// Draw only the view, with no panels: for pictures of the house.
@@ -272,6 +274,7 @@ impl State {
             linking: None,
             bare: false,
             capture: None,
+            compare: None,
             images: None,
             underlays: vec![],
             calibrate: None,
@@ -784,6 +787,52 @@ impl State {
         let before = self.project.clone();
         translate(&mut self.project, &before, pick, d);
         self.touch();
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Options: versions of the house kept side by side in one project
+
+    /// After the house under the editor changed wholesale: keep the same storey in view.
+    fn after_option_change(&mut self, storey: usize) {
+        self.selected = None;
+        self.editing = None;
+        self.linking = None;
+        self.level = self.project.levels.get(storey).or(self.project.levels.last()).map(|l| l.id).unwrap_or(0);
+        if self.compare.as_deref() == Some(self.project.option.as_str()) {
+            self.compare = None;
+        }
+        self.lux.levels = None;
+        self.load_underlays();
+    }
+
+    fn storey(&self) -> usize {
+        self.project.levels.iter().position(|l| l.id == self.level).unwrap_or(0)
+    }
+
+    /// Works on another option.
+    pub fn switch_option(&mut self, index: usize) {
+        let storey = self.storey();
+        self.edit("", |p| p.switch_option(index));
+        self.after_option_change(storey);
+    }
+
+    /// Copies the house as it stands into a new option and works on that.
+    pub fn branch_option(&mut self) {
+        let storey = self.storey();
+        let taken: Vec<String> = self.project.option_names().iter().map(|n| n.to_string()).collect();
+        let name = (1..).map(|n| format!("Option {n}")).find(|n| !taken.contains(n)).unwrap_or_default();
+        // Show what it was branched from underneath, so changes stand out.
+        let from = self.project.option.clone();
+        self.edit("", |p| p.branch_option(&name));
+        self.after_option_change(storey);
+        self.compare = Some(from);
+        self.status = format!("“{name}” starts as a copy. Change it freely: the other options are untouched.");
+    }
+
+    pub fn remove_option(&mut self) {
+        let storey = self.storey();
+        self.edit("", |p| p.remove_option());
+        self.after_option_change(storey);
     }
 
     // -----------------------------------------------------------------------------------------

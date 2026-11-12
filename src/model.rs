@@ -35,6 +35,13 @@ pub struct Project {
     pub materials: Vec<crate::materials::Material>,
     /// Next id to hand out. Ids are unique across the whole project.
     pub next_id: Id,
+    /// The name of this version of the house: "Existing", "Open-plan kitchen" …
+    #[serde(default = "Project::first_option")]
+    pub option: String,
+    /// The other versions kept in the same file, each a whole house of its own. Theirs are
+    /// always empty: options don't nest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<Project>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -45,6 +52,46 @@ pub enum Units {
 }
 
 impl Project {
+    fn first_option() -> String {
+        "Existing".into()
+    }
+
+    /// Every option's name, the one being worked on first.
+    pub fn option_names(&self) -> Vec<&str> {
+        std::iter::once(self.option.as_str()).chain(self.others.iter().map(|o| o.option.as_str())).collect()
+    }
+
+    /// Makes `others[index]` the house being worked on; the current one takes its place in
+    /// the list.
+    pub fn switch_option(&mut self, index: usize) {
+        if index >= self.others.len() {
+            return;
+        }
+        let mut others = std::mem::take(&mut self.others);
+        std::mem::swap(self, &mut others[index]);
+        // The project's name belongs to the file, not to an option.
+        self.name = others[index].name.clone();
+        self.units = others[index].units;
+        self.others = others;
+    }
+
+    /// Copies the house being worked on into a new option called `name` and switches to it.
+    pub fn branch_option(&mut self, name: &str) {
+        let mut kept = self.clone();
+        kept.others.clear();
+        self.others.insert(0, kept);
+        self.option = name.to_string();
+    }
+
+    /// Drops the option being worked on and switches to the first of the others.
+    pub fn remove_option(&mut self) {
+        if self.others.is_empty() {
+            return;
+        }
+        self.switch_option(0);
+        self.others.remove(0);
+    }
+
     pub fn id(&mut self) -> Id {
         self.next_id += 1;
         self.next_id

@@ -178,7 +178,7 @@ fn top_bar(s: &State, th: &Th) -> El {
         .gap(8.0)
         .center_y()
         .child(text("Lintel").font(TITLE).color(th.text))
-        .child(text(format!("{}{}", s.project.name, if s.dirty { " •" } else { "" })).font(VALUE).color(th.dim).truncate().max_w(220.0));
+        .child(text(format!("{}{}{}", s.project.name, if s.project.others.is_empty() { String::new() } else { format!(" · {}", s.project.option) }, if s.dirty { " •" } else { "" })).font(VALUE).color(th.dim).truncate().max_w(260.0));
     row()
         .key("top")
         .w_full()

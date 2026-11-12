@@ -132,6 +132,13 @@ scale**, drag a line along anything whose real length you know, and type that le
 image is rescaled to match. Then draw walls over it. The project stores where the image file
 is, not the picture, so a shared link doesn't carry it.
 
+## Options: the house as it is, and as it might be
+
+**New option from this** in the project panel copies the house into a named option you can
+change freely while the original stays as it was. Switch between options with a click; the
+option you came from is drawn in orange under the plan so the changes stand out. Options
+live in the same project file and travel in a shared link.
+
 ## Pictures and 3D export
 
 In the 3D and elevation views, **Save picture…** writes the view as a PNG at the window's

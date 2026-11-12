@@ -93,6 +93,8 @@ pub fn house() -> Project {
             roofs: vec![],
             materials: vec![],
             next_id: 0,
+            option: "Existing".into(),
+            others: vec![],
         },
     };
 
@@ -423,6 +425,8 @@ pub fn blank() -> Project {
         roofs: vec![],
         materials: vec![],
         next_id: 0,
+        option: "Existing".into(),
+        others: vec![],
     };
     let id = p.id();
     p.levels.push(Level::new(id, "Ground", 0.0, 2.7));

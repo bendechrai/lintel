@@ -705,6 +705,17 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
         }
     }
 
+    // Another option's walls on the same storey, as an outline to compare against.
+    let other = s.compare.as_ref().and_then(|name| s.project.others.iter().find(|o| o.option == *name)).and_then(|o| o.levels.get(index));
+    if let Some(theirs) = other {
+        let tint = hex(0xe0662a);
+        for w in &theirs.walls {
+            let outline = wall_outline(theirs, w);
+            d.fill(&outline, tint.alpha(0.16));
+            d.outline(&outline, 1.25, tint);
+        }
+    }
+
     for w in &level.walls {
         let hovered = s.hovered == Some(Pick::Wall(w.id));
         d.fill(&wall_outline(level, w), if hovered { ink.wall.mix(ink.accent, 0.35) } else { ink.wall });

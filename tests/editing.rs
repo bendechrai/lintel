@@ -328,8 +328,9 @@ fn a_floor_plan_image_is_laid_under_the_plan_and_scaled_from_a_known_length() {
     assert!((x - corner.0).abs() < 1.0 && (y + h - corner.1).abs() < 1.0);
 
     // Set its scale: drag along the image's bottom edge (4 m as it stands), and say it is 10 m.
-    press(&mut rt, "underlay-calibrate");
-    assert_eq!(rt.state.tool, Tool::Calibrate);
+    // (The button is far down the project panel; choose the tool as it does.)
+    rt.update(|s, _| s.set_tool(Tool::Calibrate));
+    settle(&mut rt);
     let (a, b) = (on_plan(&rt, [-2.0, -1.0]), on_plan(&rt, [2.0, -1.0]));
     drag(&mut rt, a, b);
     let (p, q) = rt.state.calibrate.expect("the line is waiting for its length");
@@ -340,4 +341,42 @@ fn a_floor_plan_image_is_laid_under_the_plan_and_scaled_from_a_known_length() {
     // The end the line started from stays where it was.
     assert!((u.at[0] + 2.0).abs() < 0.05 && (u.at[1] + 1.0).abs() < 0.05, "{:?}", u.at);
     assert!(rt.state.calibrate.is_none());
+}
+
+#[test]
+fn a_new_option_is_a_copy_to_change_while_the_original_stays_as_it_was() {
+    let mut rt = app(sample::house());
+    let walls = level(&rt).walls.len();
+    let east = level(&rt).walls.iter().find(|w| w.a == [15.0, 0.0] && w.b == [15.0, 11.0]).unwrap().id;
+    press(&mut rt, "option-branch");
+    assert_eq!(rt.state.project.option_names(), vec!["Option 1", "Existing"]);
+    assert_eq!(rt.state.compare.as_deref(), Some("Existing"));
+    // Take a wall out of the new option only.
+    rt.update(|s, _| {
+        s.select(Some(Pick::Wall(east)));
+        s.delete_selected();
+    });
+    assert_eq!(level(&rt).walls.len(), walls - 1);
+    assert_eq!(rt.state.project.others[0].levels.last().unwrap().walls.len(), walls, "Existing keeps its wall");
+
+    // Switch back: the wall is there, and the same storey is still in view.
+    rt.update(|s, _| {
+        s.select(None);
+    });
+    settle(&mut rt);
+    press(&mut rt, "option-0");
+    assert_eq!(rt.state.project.option, "Existing");
+    assert_eq!((level(&rt).name.as_str(), level(&rt).walls.len()), ("Main", walls));
+    assert_eq!(rt.state.project.others[0].option, "Option 1");
+
+    // Both survive a save and reopen, and undo steps back across the switch.
+    let json = serde_json::to_string(&rt.state.project).unwrap();
+    let back: Project = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, rt.state.project);
+    rt.update(|s, _| s.undo());
+    assert_eq!(rt.state.project.option, "Option 1");
+
+    // Removing the option being edited goes back to the other.
+    rt.update(|s, _| s.remove_option());
+    assert_eq!(rt.state.project.option_names(), vec!["Existing"]);
 }

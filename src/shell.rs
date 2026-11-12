@@ -311,6 +311,14 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.set_view(ViewMode::Model);
         s.capture = Some(std::env::temp_dir().join("lintel-capture-test.png"));
     }),
+    ("options", |s| {
+        s.branch_option();
+        // The proposal: take out the wall between the hall and the living room.
+        let wall = s.active().and_then(|l| l.walls.iter().find(|w| w.a == [8.4, 0.0]).map(|w| w.id));
+        s.select(wall.map(Pick::Wall));
+        s.delete_selected();
+        s.edit("", |p| p.option = "Open-plan living".into());
+    }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 
