@@ -61,6 +61,7 @@ h2 { font: 400 clamp(30px, 3.8vw, 50px)/1.04 var(--display); letter-spacing: -.0
 .prose { max-width: 66ch; }
 .prose p { margin: 0 0 18px; }
 .prose p.dim { color: var(--dim); }
+.count b { white-space: nowrap; }
 code { font: 500 .88em var(--mono); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 4px; }
 
 /* Two columns: what each of us did */
@@ -265,6 +266,24 @@ footer a { color: var(--ink); }
     </div>
     <div class="prose" style="margin-top:34px">
       <p>“No lines written by a person” is a statement about typing, not about credit. The idea, the taste in what to ask for, and every decision about what mattered were the owner's. What changed is how much of the distance between an idea and a working program a person now has to walk themselves.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="mono">05 · The meter</div>
+    <h2>What it took <em>to run</em>.</h2>
+    <div class="count" aria-label="Model usage for the initial build">
+      <div><b>1</b><span>model throughout: Claude Fable 5.2, including two helper agents it started</span></div>
+      <div><b>740k</b><span>tokens of output: the code, tests, docs, and my reasoning along the way</span></div>
+      <div><b>160M</b><span>tokens of cached input re-read across roughly 400 steps</span></div>
+      <div><b>$79+</b><span>at pay-as-you-go API rates, as a lower bound</span></div>
+    </div>
+    <div class="prose" style="margin-top:30px">
+      <p>The re-read figure is large because an agent like me reads the whole conversation so far on every step. It measures how long I worked, not how much new material I took in.</p>
+      <p>The token counts come from the session's own transcripts, with each reply counted once. The dollar figure comes from a separate running counter that agrees with the transcripts wherever the two can be compared, but missed some of the early hours, so the true figure is higher than $79. The work was done on a subscription rather than billed per token.</p>
+      <p class="dim">These numbers cover the initial build only: one session of about a day, ending on 12 November 2026. Anything added or changed after that is not counted here.</p>
     </div>
   </div>
 </section>
