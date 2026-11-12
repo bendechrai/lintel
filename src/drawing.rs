@@ -1,4 +1,5 @@
-//! Dimensioned plans on paper: one page a level, to scale, as a PDF.
+//! Dimensioned plans and elevations on paper, to scale, as a PDF: a page for each level, then
+//! one for each face of the house.
 //!
 //! The PDF is written directly: straight lines, filled shapes and Helvetica text are all a
 //! plan needs, and that keeps drawings free of any dependency.
@@ -85,11 +86,13 @@ pub fn text_width(text: &str, size: f32) -> f32 {
 pub struct Page {
     size: (f32, f32),
     ops: String,
+    /// Deflate the page in the file: for pages that are mostly geometry.
+    packed: bool,
 }
 
 impl Page {
     fn new(size: (f32, f32)) -> Page {
-        Page { size, ops: String::new() }
+        Page { size, ops: String::new(), packed: false }
     }
 
     fn rgb(c: u32) -> String {
@@ -112,6 +115,17 @@ impl Page {
         self.ops += &format!("{} rg ", Page::rgb(color));
         self.path(pts, true);
         self.ops += "f\n";
+    }
+
+    /// A filled triangle with a hairline of its own colour round it, so neighbours leave no
+    /// crack between them. Written tersely: an elevation is thousands of these.
+    fn facet(&mut self, pts: [[f32; 2]; 3], color: u32) {
+        let c = Page::rgb(color);
+        self.ops += &format!("{c} rg {c} RG ");
+        for (i, p) in pts.iter().enumerate() {
+            self.ops += &format!("{:.1} {:.1} {} ", p[0] * MM, p[1] * MM, if i == 0 { "m" } else { "l" });
+        }
+        self.ops += "b\n";
     }
 
     /// A line through `pts`, `width` millimetres wide; `dash` millimetres on and off if set.
@@ -174,8 +188,9 @@ pub fn pdf(pages: &[Page]) -> Vec<u8> {
             &mut out,
             format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {:.2} {:.2}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents {content} 0 R >>", page.size.0 * MM, page.size.1 * MM).as_bytes(),
         );
-        let mut stream = format!("<< /Length {} >>\nstream\n", page.ops.len()).into_bytes();
-        stream.extend(page.ops.as_bytes());
+        let (body, filter) = if page.packed { (miniz_oxide::deflate::compress_to_vec_zlib(page.ops.as_bytes(), 8), " /Filter /FlateDecode") } else { (page.ops.clone().into_bytes(), "") };
+        let mut stream = format!("<< /Length {}{filter} >>\nstream\n", body.len()).into_bytes();
+        stream.extend(body);
         stream.extend(b"\nendstream");
         object(&mut out, &stream);
     }
@@ -518,9 +533,135 @@ fn level_page(project: &Project, level: &Level, sheet: Sheet) -> Page {
     page
 }
 
+// ---------------------------------------------------------------------------------------------
+// A face of the house on a sheet
+
+/// The four faces, with the direction from the house toward the person looking at each.
+const FACES: [(&str, [f32; 2]); 4] = [("South", [0.0, -1.0]), ("East", [1.0, 0.0]), ("North", [0.0, 1.0]), ("West", [-1.0, 0.0])];
+
+fn srgb(c: f32) -> u32 {
+    let c = c.clamp(0.0, 1.0);
+    ((if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }) * 255.0).round() as u32
+}
+
+/// One face of the house, seen square on: the building in flat tones with nearer surfaces
+/// over further ones, the ground as it meets that face, floor levels and overall sizes.
+fn elevation_page(project: &Project, scene: &crate::scene::Scene, face: (&str, [f32; 2]), sheet: Sheet) -> Page {
+    let (pw, ph) = sheet.paper.size();
+    let mut page = Page::new((pw, ph));
+    page.packed = true;
+    let (name, toward) = face;
+    // Across the page, left to right, as the viewer sees it.
+    let right = [-toward[1], toward[0]];
+    let across = |p: [f32; 3]| p[0] * right[0] + p[1] * right[1];
+    let depth = |p: [f32; 3]| p[0] * toward[0] + p[1] * toward[1];
+
+    let (lo, hi) = scene.bounds;
+    let corners = [[lo[0], lo[1], 0.0], [hi[0], lo[1], 0.0], [hi[0], hi[1], 0.0], [lo[0], hi[1], 0.0]];
+    let (u0, u1) = corners.iter().fold((f32::MAX, f32::MIN), |(a, b), c| (a.min(across(*c)), b.max(across(*c))));
+    let front = corners.iter().map(|c| depth(*c)).fold(f32::MIN, f32::max);
+    // The ground where it meets this face, a little beyond each end.
+    let ground: Vec<P2> = (0..=((u1 - u0 + 4.0) / 0.25).ceil() as usize)
+        .map(|i| {
+            let u = u0 - 2.0 + i as f32 * 0.25;
+            [u, project.site.terrain.height([right[0] * u + toward[0] * front, right[1] * u + toward[1] * front])]
+        })
+        .collect();
+    let low = ground.iter().map(|g| g[1]).fold(lo[2], f32::min) - 0.8;
+    let (z0, z1) = (low, hi[2]);
+
+    let room = [pw - 2.0 * EDGE - DIMS - 34.0, ph - 2.0 * EDGE - DIMS - TITLE - 8.0];
+    let s = sheet.scale.unwrap_or_else(|| {
+        let all = scales(project.units);
+        all.iter().map(|(s, _)| *s).find(|s| (u1 - u0 + 4.0) * 1000.0 / s <= room[0] && (z1 - z0) * 1000.0 / s <= room[1]).unwrap_or(all.last().map(|s| s.0).unwrap_or(500.0))
+    });
+    let k = 1000.0 / s;
+
+    page.stroke(&[[EDGE, EDGE], [pw - EDGE, EDGE], [pw - EDGE, ph - EDGE], [EDGE, ph - EDGE], [EDGE, EDGE]], 0.35, INK, None);
+    page.line([EDGE, EDGE + TITLE], [pw - EDGE, EDGE + TITLE], 0.35, INK);
+    page.text([EDGE + 5.0, EDGE + 9.0], &project.name, 13.0, INK, 0.0, 0.0, true);
+    let option = if project.others.is_empty() { String::new() } else { format!("  ·  {}", project.option) };
+    page.text([EDGE + 5.0, EDGE + 3.5], &format!("{name} elevation{option}"), 9.0, GREY, 0.0, 0.0, false);
+    page.text([pw - EDGE - 5.0, EDGE + 9.0], &format!("Scale {}", scale_name(project.units, s)), 11.0, INK, 1.0, 0.0, true);
+    page.text([pw - EDGE - 5.0, EDGE + 3.5], &format!("{} landscape  ·  drawn with Lintel", sheet.paper.name()), 7.5, GREY, 1.0, 0.0, false);
+    if lo[0] > hi[0] {
+        page.text([pw / 2.0, ph / 2.0], "Nothing is built yet.", 11.0, GREY, 0.5, 0.0, false);
+        return page;
+    }
+
+    let space = ([EDGE + DIMS, EDGE + TITLE + DIMS], [pw - EDGE - 34.0, ph - EDGE - 8.0]);
+    let size = [(u1 - u0) * k, (z1 - z0) * k];
+    let origin = [space.0[0] + (space.1[0] - space.0[0] - size[0]) / 2.0 - u0 * k, space.0[1] + (space.1[1] - space.0[1] - size[1]) / 2.0 - z0 * k];
+    let mut plot = Plot { page: &mut page, k, origin, units: project.units };
+
+    // The building: every surface that faces this way, furthest first so nearer ones cover.
+    let mut facets: Vec<(f32, [[f32; 2]; 3], u32)> = Vec::new();
+    for (list, glass) in [(&scene.opaque, false), (&scene.translucent, true)] {
+        for t in list.chunks_exact(3) {
+            let v = [scene.vertices[t[0] as usize], scene.vertices[t[1] as usize], scene.vertices[t[2] as usize]];
+            // Planting and fences would hide the face they stand in front of.
+            let pick = v[0].pick as usize;
+            if pick > 0 && matches!(scene.picks.get(pick - 1), Some(Pick::Plant(_) | Pick::Barrier(_) | Pick::Patch(_))) {
+                continue;
+            }
+            let n = v[0].normal;
+            let facing = n[0] * toward[0] + n[1] * toward[1];
+            if facing <= 0.01 {
+                continue;
+            }
+            // Lit from in front and a little above, enough to tell a roof slope from a wall.
+            let shade = 0.62 + 0.30 * facing + 0.10 * n[2].max(0.0);
+            let c = v[0].color;
+            let rgb = if glass { [0.55, 0.68, 0.76] } else { [c[0] * shade, c[1] * shade, c[2] * shade] };
+            let color = (srgb(rgb[0]) << 16) | (srgb(rgb[1]) << 8) | srgb(rgb[2]);
+            let at = |p: [f32; 3]| plot.at([across(p), p[2]]);
+            // Glass sits just proud of what is behind it.
+            let d = (depth(v[0].pos) + depth(v[1].pos) + depth(v[2].pos)) / 3.0 + if glass { 0.02 } else { 0.0 };
+            facets.push((d, [at(v[0].pos), at(v[1].pos), at(v[2].pos)], color));
+        }
+    }
+    facets.sort_by(|a, b| a.0.total_cmp(&b.0));
+    for (_, pts, color) in &facets {
+        plot.page.facet(*pts, *color);
+    }
+
+    // The ground: earth below the line it makes along this face.
+    let mut earth = plot.poly(&ground);
+    let line = earth.clone();
+    earth.push(plot.at([ground.last().map_or(u1, |g| g[0]), low]));
+    earth.push(plot.at([u0 - 2.0, low]));
+    plot.page.fill(&earth, 0xe9e5dc);
+    plot.page.stroke(&line, 0.5, INK, None);
+
+    // Floor levels: a dashed line across and a height at the right-hand end.
+    for l in &project.levels {
+        let (a, b) = (plot.at([u0 - 1.0, l.elevation]), plot.at([u1 + 1.5, l.elevation]));
+        plot.page.stroke(&[a, b], 0.13, GREY, Some(1.6));
+        let sign = if l.elevation > 0.0005 { "+" } else if l.elevation < -0.0005 { "-" } else { "±" };
+        let height = units::length(l.elevation.abs(), plot.units);
+        plot.page.text([b[0] + 1.5, b[1] + 0.6], &l.name, 7.0, INK, 0.0, 0.0, true);
+        plot.page.text([b[0] + 1.5, b[1] - 2.4], &format!("{sign}{height}"), 6.5, GREY, 0.0, 0.0, false);
+    }
+
+    // Overall width below; height from the lowest floor to the top, at the left.
+    plot.dimension([u0, low], [u1, low], -6.0);
+    let foot = project.levels.iter().map(|l| l.elevation).fold(f32::MAX, f32::min).min(z1);
+    plot.dimension([u0 - 1.2, foot], [u0 - 1.2, z1], 6.0);
+    page
+}
+
 /// Dimensioned plans of every level, one a page, top level first.
 pub fn plans(project: &Project, sheet: Sheet) -> Vec<u8> {
     let pages: Vec<Page> = project.levels.iter().rev().map(|l| level_page(project, l, sheet)).collect();
+    pdf(&pages)
+}
+
+/// The whole set: the plans, then the four elevations.
+pub fn drawings(project: &Project, sheet: Sheet) -> Vec<u8> {
+    let mut pages: Vec<Page> = project.levels.iter().rev().map(|l| level_page(project, l, sheet)).collect();
+    let options = crate::mesh::BuildOptions { terrain: false, fixtures: false, furniture: false, ..Default::default() };
+    let scene = crate::mesh::build(project, &options);
+    pages.extend(FACES.iter().map(|f| elevation_page(project, &scene, *f, sheet)));
     pdf(&pages)
 }
 
@@ -563,6 +704,34 @@ mod tests {
         for needle in ["(Living room)", "(Kitchen & dining)", "(Scale 1:75)", "(15 m)", "(11 m)", "(Main plan)", "(Basement plan)"] {
             assert!(doc.contains(needle), "the drawing lacks {needle}");
         }
+    }
+
+    #[test]
+    fn the_full_set_adds_an_elevation_of_each_face_with_floor_levels_and_sizes() {
+        let project = crate::sample::house();
+        let bytes = drawings(&project, Sheet { paper: Paper::A3, scale: None });
+        let doc = text(&bytes);
+        assert_eq!(doc.matches("/Type /Page ").count(), 6, "two plans and four faces");
+        // The elevation pages are deflated; read each back.
+        let find = |needle: &[u8], from: usize| bytes[from..].windows(needle.len()).position(|w| w == needle).map(|i| i + from);
+        let mut at = 0;
+        let mut faces = Vec::new();
+        while let Some(i) = find(b"/Filter /FlateDecode", at) {
+            let head = text(&bytes[i.saturating_sub(24)..i]);
+            let n: usize = head.rsplit("/Length ").next().unwrap().trim().parse().unwrap();
+            let start = find(b"stream\n", i).unwrap() + 7;
+            faces.push(String::from_utf8(miniz_oxide::inflate::decompress_to_vec_zlib(&bytes[start..start + n]).expect("inflates")).unwrap());
+            at = start + n;
+        }
+        assert_eq!(faces.len(), 4);
+        for (page, name) in faces.iter().zip(["South", "East", "North", "West"]) {
+            assert!(page.contains(&format!("({name} elevation)")), "{name}");
+            assert!(page.contains("(Main)") && page.contains("(Basement)"), "{name} names its floor levels");
+            assert!(page.matches(" b\n").count() > 300, "{name} draws the building");
+        }
+        // Across the south face, eaves included, is 16 m; the basement floor is below zero.
+        assert!(faces[0].contains("(16 m)") && faces[0].contains("(-2.9 m)"), "sizes on the south face");
+        assert!(bytes.len() < 3_000_000, "the file stays a sensible size: {}", bytes.len());
     }
 
     #[test]

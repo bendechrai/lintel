@@ -183,13 +183,17 @@ live service.
 
 ## Drawings
 
-**Drawings as PDF…** (plan view) writes a dimensioned plan of every level, one landscape page
-each: walls, doors and windows, room names with areas and sizes, stairs, fixtures, a chain of
-dimensions between the walls with an overall figure, a north arrow and a scale bar. Choose A4,
-A3, Letter or Tabloid and a standard scale under **Drawings** in the project panel, or leave
-the scale on best fit. Elevations aren't drawn to PDF yet; save those as pictures.
+**Drawings as PDF…** (plan view) writes the set, one landscape page each. First a dimensioned
+plan of every level: walls, doors and windows, room names with areas and sizes, stairs,
+fixtures, a chain of dimensions between the walls with an overall figure, a north arrow and a
+scale bar. Then an elevation of each face, south, east, north and west: the building in flat
+tones, the ground as it meets that face, each floor level with its height, and the overall
+width and height. Choose A4, A3, Letter or Tabloid and a standard scale under **Drawings** in
+the project panel, or leave the scale on best fit.
 
 ![A plan drawn to scale with dimensions](docs/drawing.png)
+
+![The south elevation on a sheet](docs/elevation.png)
 
 ## Pictures and 3D export
 
@@ -224,7 +228,7 @@ GPU errors. Saving, opening files and the elevation fetch don't work in the brow
 
 ## Not yet
 
-L- and U-shaped stairs, dormers and valleys, wall editing in 3D, elevations in the PDF,
+L- and U-shaped stairs, dormers and valleys, wall editing in 3D, sections in the PDF,
 textures from photos, a phone room-scan import, signed installers. The assistant doesn't
 listen to the microphone itself, and isn't in the browser version.
 

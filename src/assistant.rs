@@ -14,8 +14,10 @@ use crate::geom;
 use crate::model::*;
 
 pub const MODEL: &str = "claude-opus-5-5";
+#[cfg(not(target_arch = "wasm32"))]
 const API_VERSION: &str = "2026-10-21";
 /// Lets the API hand a request another model declines to one that will take it.
+#[cfg(not(target_arch = "wasm32"))]
 const FALLBACK_BETA: &str = "server-side-fallback-2026-07-01";
 
 const SYSTEM: &str = "You are the measuring assistant inside Lintel, an app for modelling a home. The person is \

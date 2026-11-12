@@ -50,7 +50,7 @@ Sun by place and time; lamps with lumens and colour temperature; LED strips; swi
 to lights; light levels under a clear or overcast sky, with a target per room; the shared link
 and phone viewer; tracing a plan image; pictures and glTF export; named options; skirting,
 cornices, part-height finishes and wall build-up; sloped and vaulted ceilings, bulkheads and
-beams; fences, gates, retaining walls, trees and deck structure; dimensioned plans as PDF; a
+beams; fences, gates, retaining walls, trees and deck structure; dimensioned plans and elevations as PDF; a
 product library; the measuring assistant on your own API key.
 
 ## Left open
@@ -59,5 +59,5 @@ product library; the measuring assistant on your own API key.
   capture the microphone itself (question 4 stands for whether it should also answer
   questions about the house).
 - Options compare on the plan, not side by side in 3D.
-- Drawings are plans; elevations go out as pictures.
+- Drawings are plans and elevations; sections go out as pictures.
 - Questions 1 to 3 and 5 onward above keep their defaults until answered.

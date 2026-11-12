@@ -58,12 +58,12 @@ pub fn save_picture(s: &mut State, tx: &mut Tx) {
 /// Saves dimensioned plans of every level as a PDF.
 pub fn save_drawings(s: &mut State, tx: &mut Tx) {
     s.commit_editing();
-    let mut options = FileDialogOptions { title: "Save the plans as a PDF".into(), ..Default::default() }.filter("PDF", &["pdf"]);
-    options.file_name = Some(format!("{}-plans.pdf", s.project.name.to_lowercase().replace(' ', "-")));
+    let mut options = FileDialogOptions { title: "Save the drawings as a PDF".into(), ..Default::default() }.filter("PDF", &["pdf"]);
+    options.file_name = Some(format!("{}-drawings.pdf", s.project.name.to_lowercase().replace(' ', "-")));
     tx.save_file(options, |s: &mut State, result, _| match result {
         Ok(Some(path)) => {
-            s.status = match std::fs::write(&path, crate::drawing::plans(&s.project, s.sheet)) {
-                Ok(()) => format!("Saved {}: a page for each level.", path.display()),
+            s.status = match std::fs::write(&path, crate::drawing::drawings(&s.project, s.sheet)) {
+                Ok(()) => format!("Saved {}: a plan of each level and an elevation of each face.", path.display()),
                 Err(e) => format!("Couldn't write {}: {e}", path.display()),
             }
         }
