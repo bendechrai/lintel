@@ -94,6 +94,7 @@ pub fn house() -> Project {
             roofs: vec![],
             materials: vec![],
             next_id: 0,
+            products: vec![],
             option: "Existing".into(),
             others: vec![],
         },
@@ -487,6 +488,7 @@ pub fn blank() -> Project {
         roofs: vec![],
         materials: vec![],
         next_id: 0,
+        products: vec![],
         option: "Existing".into(),
         others: vec![],
     };

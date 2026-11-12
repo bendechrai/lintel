@@ -148,6 +148,15 @@ change freely while the original stays as it was. Switch between options with a 
 option you came from is drawn in orange under the plan so the changes stand out. Options
 live in the same project file and travel in a shared link.
 
+## Your own products
+
+Furniture starts as generic, resizable pieces. For a real thing, place the nearest piece, give
+it the maker's name and true width, depth and height, and press **Save as a product**. It then
+sits under **Your products** at the top of the tool panel, to place again at exactly that
+size. Products live in the project, and **Export…** writes them to a library file another
+project can import. Lintel ships no product data of its own: the dimensions are the ones you
+enter from the specification sheet.
+
 ## Drawings
 
 **Drawings as PDF…** (plan view) writes a dimensioned plan of every level, one landscape page

@@ -72,6 +72,26 @@ pub fn save_drawings(s: &mut State, tx: &mut Tx) {
     });
 }
 
+fn products_dialog(title: &str) -> FileDialogOptions {
+    FileDialogOptions { title: title.into(), file_name: Some("products.lintel-products.json".into()), ..Default::default() }.filter("Lintel products", &["json"])
+}
+
+pub fn import_products(_: &mut State, tx: &mut Tx) {
+    tx.open_file(products_dialog("Import a product library"), |s: &mut State, result, _| match result {
+        Ok(Some(path)) => s.import_products(&path),
+        Ok(None) => {}
+        Err(e) => s.status = format!("Couldn't show the Open dialog ({e})."),
+    });
+}
+
+pub fn export_products(_: &mut State, tx: &mut Tx) {
+    tx.save_file(products_dialog("Export this project's products"), |s: &mut State, result, _| match result {
+        Ok(Some(path)) => s.export_products(&path),
+        Ok(None) => {}
+        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+    });
+}
+
 /// Exports the house as a glTF 3D model.
 pub fn export_model(s: &mut State, tx: &mut Tx) {
     s.commit_editing();
@@ -355,8 +375,15 @@ fn group_head(s: &State, th: &Th, name: &str) -> El {
 fn toolbox(s: &State, th: &Th) -> El {
     let mut list = col().w_full().gap(1.0).padding(8.0);
     let t = |key: &str, label: &str, tool: Tool, hint: &str| tool_row(s, th, format!("tool-{key}"), label, tool, hint);
+    list = list.child(t("select", "Select", Tool::Select, "V"));
+    // Saved products come first: they are what a real house is furnished from.
+    if !s.project.products.is_empty() {
+        list = list.child(section(th, "Your products"));
+        for (i, product) in s.project.products.iter().enumerate() {
+            list = list.child(tool_row(s, th, format!("tool-product-{i}"), &product.name, Tool::Product(i), ""));
+        }
+    }
     list = list
-        .child(t("select", "Select", Tool::Select, "V"))
         .child(section(th, "Build"))
         .child(t("wall", "Wall", Tool::Wall, "W"))
         .child(t("room", "Room / floor", Tool::Room, "M"))

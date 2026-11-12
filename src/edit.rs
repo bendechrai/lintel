@@ -294,6 +294,19 @@ fn place(s: &mut State, p: P2) {
             // Stay in the tool: fixtures usually go in several at a time.
             s.selected = Some(Pick::Fixture(id));
         }
+        Tool::Product(index) => {
+            let Some(product) = s.project.products.get(*index).cloned() else { return };
+            s.checkpoint("");
+            let id = s.project.id();
+            let step = units::snap_step(s.project.units);
+            let piece = product.place(id, geom::snap2(p, step));
+            if let Some(l) = level_mut(s) {
+                l.furniture.push(piece);
+            }
+            s.touch();
+            s.tool = Tool::Select;
+            s.select(Some(Pick::Furniture(id)));
+        }
         Tool::Plant(kind) => {
             s.checkpoint("");
             let id = s.project.id();
@@ -438,7 +451,7 @@ pub fn canvas_resized(s: &mut State, size: [f32; 2]) {
 pub fn plan_hover(s: &mut State, e: PointerEvent, _: &mut Tx) {
     let p = s.plan.to_model([e.x, e.y], s.canvas);
     s.cursor = Some(match s.tool {
-        Tool::Select | Tool::Door | Tool::Window | Tool::Passage | Tool::Garage | Tool::Recess | Tool::Fixture(_) => p,
+        Tool::Select | Tool::Door | Tool::Window | Tool::Passage | Tool::Garage | Tool::Recess | Tool::Fixture(_) | Tool::Plant(_) => p,
         _ => snap_point(s, p, &[]),
     });
 }

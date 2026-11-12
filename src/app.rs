@@ -33,6 +33,8 @@ pub enum Tool {
     Stair,
     Fixture(FixtureKind),
     Furniture(String),
+    /// One of the project's saved products, by its place in the list.
+    Product(usize),
     Patch,
     Roof,
     Barrier(BarrierKind),
@@ -50,7 +52,7 @@ impl Tool {
             Tool::Door | Tool::Window | Tool::Passage | Tool::Garage | Tool::Recess => "Click on a wall to place it there.",
             Tool::Stair => "Drag from the foot of the stair toward the top.",
             Tool::Fixture(_) => "Click to place: wall fixtures go on the nearest wall face, ceiling fixtures where you click.",
-            Tool::Furniture(_) => "Click to place it. Press R to turn the selected piece.",
+            Tool::Furniture(_) | Tool::Product(_) => "Click to place it. Press R to turn the selected piece.",
             Tool::Patch => "Drag a rectangle of ground to surface (a driveway, path or patio).",
             Tool::Roof => "Drag a rectangle over the walls the roof covers.",
             Tool::Barrier(_) => "Drag along the line it follows. Afterwards, drag its ends, or double-click it to add a corner.",
@@ -767,6 +769,47 @@ impl State {
                 }
             }
         });
+    }
+
+    /// Saves the selected piece, at its size and finishes, as a product to place again.
+    pub fn save_product(&mut self) {
+        let Some(Pick::Furniture(id)) = self.selected else { return };
+        let Some(piece) = self.project.furniture(id).cloned() else { return };
+        let product = Product::of(&piece);
+        let name = product.name.clone();
+        self.edit("", |p| match p.products.iter_mut().find(|x| x.name == product.name) {
+            Some(existing) => *existing = product,
+            None => p.products.push(product),
+        });
+        self.status = format!("“{name}” is saved under Your products in the tool panel.");
+    }
+
+    /// Reads a library file of products into the project, replacing ones of the same name.
+    pub fn import_products(&mut self, path: &std::path::Path) {
+        let read = std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Vec<Product>>(&t).map_err(|e| e.to_string()));
+        match read {
+            Ok(list) => {
+                let n = list.len();
+                self.edit("", |p| {
+                    for product in list {
+                        match p.products.iter_mut().find(|x| x.name == product.name) {
+                            Some(existing) => *existing = product,
+                            None => p.products.push(product),
+                        }
+                    }
+                });
+                self.status = format!("{n} products read from {}.", path.display());
+            }
+            Err(e) => self.status = format!("Couldn't read products from {}: {e}", path.display()),
+        }
+    }
+
+    pub fn export_products(&mut self, path: &std::path::Path) {
+        let json = serde_json::to_string_pretty(&self.project.products).unwrap_or_default();
+        self.status = match std::fs::write(path, json) {
+            Ok(()) => format!("{} products written to {}. Import that file into another project to use them there.", self.project.products.len(), path.display()),
+            Err(e) => format!("Couldn't write {}: {e}", path.display()),
+        };
     }
 
     /// Turn the selected furniture, stair or ceiling fixture by `by` radians.

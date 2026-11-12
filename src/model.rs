@@ -35,6 +35,9 @@ pub struct Project {
     pub materials: Vec<crate::materials::Material>,
     /// Next id to hand out. Ids are unique across the whole project.
     pub next_id: Id,
+    /// Real products saved by their true dimensions, to place again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub products: Vec<Product>,
     /// The name of this version of the house: "Existing", "Open-plan kitchen" …
     #[serde(default = "Project::first_option")]
     pub option: String,
@@ -1111,6 +1114,35 @@ pub struct Furniture {
     /// Hangs from the ceiling: its top is at the ceiling, wherever that is (a bulkhead, a beam).
     #[serde(default)]
     pub hung: bool,
+}
+
+/// A real product: a catalogue shape at the maker's own dimensions and finishes, under the
+/// name you know it by ("LG fridge, model …").
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Product {
+    pub name: String,
+    /// The catalogue piece it is drawn as: `"fridge"`, `"wash_tower"` …
+    pub shape: String,
+    /// Width, depth, height, from the maker's specification.
+    pub size: [f32; 3],
+    #[serde(default)]
+    pub lift: f32,
+    #[serde(default)]
+    pub hung: bool,
+    pub finish: Finish,
+    pub accent: Finish,
+}
+
+impl Product {
+    /// The product a placed piece amounts to.
+    pub fn of(piece: &Furniture) -> Product {
+        Product { name: piece.name.clone(), shape: piece.kind.clone(), size: piece.size, lift: piece.lift, hung: piece.hung, finish: piece.finish.clone(), accent: piece.accent.clone() }
+    }
+
+    /// One of these, placed at `at`.
+    pub fn place(&self, id: Id, at: P2) -> Furniture {
+        Furniture { id, kind: self.shape.clone(), name: self.name.clone(), at, turn: 0.0, size: self.size, lift: self.lift, finish: self.finish.clone(), accent: self.accent.clone(), hung: self.hung }
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

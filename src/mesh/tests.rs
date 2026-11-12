@@ -102,6 +102,7 @@ fn house() -> Project {
         roofs: vec![roof(90, RoofShape::Gable, [3.0, 2.0]), roof(91, RoofShape::Hip, [3.0, 2.0]), roof(92, RoofShape::Shed, [3.0, 2.0]), roof(93, RoofShape::Flat, [3.0, 2.0]), Roof { size: [3.0, 6.0], ..roof(94, RoofShape::Hip, [3.0, 2.0]) }],
         materials: vec![],
         next_id: 1000,
+        products: vec![],
         option: "Existing".into(),
         others: vec![],
     }
@@ -249,6 +250,7 @@ fn an_empty_project_builds_to_nothing() {
         roofs: vec![],
         materials: vec![],
         next_id: 0,
+        products: vec![],
         option: "Existing".into(),
         others: vec![],
     };

@@ -1138,6 +1138,42 @@ fn plant(s: &State, th: &Th, t: &Plant) -> Vec<El> {
     ]
 }
 
+/// The project's saved products.
+fn product_rows(s: &State, th: &Th) -> Vec<El> {
+    let u = s.project.units;
+    let mut v = vec![section(th, "Your products")];
+    if s.project.products.is_empty() {
+        v.push(text("Real things at their true sizes. Place a piece, set its name and the maker's dimensions, and press “Save as a product”. Or import a library file from another project.").font(SMALL).color(th.dim).wrap());
+    }
+    for (i, product) in s.project.products.iter().enumerate() {
+        let size = format!("{} × {} × {}", units::length(product.size[0], u), units::length(product.size[1], u), units::length(product.size[2], u));
+        v.push(
+            row()
+                .w_full()
+                .min_h(26.0)
+                .gap(8.0)
+                .center_y()
+                .child(col().grow(1.0).min_w(0.0).child(text(product.name.clone()).font(VALUE).color(th.text).truncate()).child(text(size).font(SMALL).color(th.dim).truncate()))
+                .child(chip(th, format!("product-{i}-remove"), "Remove", false).on_press(move |s: &mut State| {
+                    s.edit("", |p| {
+                        if i < p.products.len() {
+                            p.products.remove(i);
+                        }
+                    });
+                    if matches!(s.tool, Tool::Product(_)) {
+                        s.set_tool(Tool::Select);
+                    }
+                })),
+        );
+    }
+    let mut buttons = row().w_full().gap(6.0).mt(4.0).flex_wrap().child(button(th, "products-import", "Import…", false).on_press_tx(crate::ui::import_products));
+    if !s.project.products.is_empty() {
+        buttons = buttons.child(button(th, "products-export", "Export…", false).on_press_tx(crate::ui::export_products));
+    }
+    v.push(buttons);
+    v
+}
+
 /// Paper and scale for the PDF drawings.
 fn drawing_rows(s: &State, th: &Th) -> Vec<El> {
     use crate::drawing::{Paper, fit, scales};
@@ -1276,6 +1312,8 @@ fn furniture(s: &State, th: &Th, lib: &Library, f: &Furniture) -> Vec<El> {
                 f.accent = x
             }
         }),
+        row().w_full().mt(10.0).child(button(th, "furn-save-product", "Save as a product", false).on_press(|s: &mut State| s.save_product())),
+        text("Give it the maker's name and true width, depth and height, then save it: it joins Your products in the tool panel, at that size, to place again.").font(SMALL).color(th.dim).wrap(),
         actions(th, true, true),
     ]
 }
@@ -1487,6 +1525,7 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
             .child(button(th, "level-remove", "Remove", false).on_press(move |s: &mut State| s.remove_level(level))),
     );
 
+    v.extend(product_rows(s, th));
     v.extend(drawing_rows(s, th));
     v.extend(underlay_rows(s, th));
 

@@ -453,3 +453,44 @@ fn drawing_a_fence_and_planting_a_tree() {
     });
     assert!(rt.state.project.site.plants.is_empty() && rt.state.project.site.barriers.len() == 1);
 }
+
+#[test]
+fn a_piece_saved_as_a_product_places_again_at_its_true_size_and_travels_in_a_library_file() {
+    let mut rt = app(sample::house());
+    let fridge = level(&rt).furniture.iter().find(|f| f.kind == "fridge").unwrap().id;
+    // Give it the maker's name and dimensions, then save it.
+    rt.update(|s, _| {
+        s.select(Some(Pick::Furniture(fridge)));
+        s.edit("", |p| {
+            let f = p.furniture_mut(fridge).unwrap();
+            f.name = "Fridge, model X".into();
+            f.size = [0.908, 0.735, 1.79];
+        });
+        s.save_product();
+    });
+    settle(&mut rt);
+    assert_eq!(rt.state.project.products.len(), 1);
+
+    // It is in the tool panel; placing it gives a piece of exactly that size.
+    press(&mut rt, "tool-product-0");
+    assert_eq!(rt.state.tool, Tool::Product(0));
+    let at = on_plan(&rt, [3.1, 9.0]);
+    click(&mut rt, at);
+    let Some(Pick::Furniture(new)) = rt.state.selected else { panic!("the new piece is selected") };
+    let placed = rt.state.project.furniture(new).unwrap().clone();
+    assert_eq!((placed.name.as_str(), placed.kind.as_str(), placed.size), ("Fridge, model X", "fridge", [0.908, 0.735, 1.79]));
+    assert!(new != fridge);
+
+    // Saving the same name again updates it; a library file carries it to another project.
+    rt.update(|s, _| {
+        s.edit("", |p| p.furniture_mut(new).unwrap().size[2] = 1.8);
+        s.save_product();
+    });
+    assert_eq!((rt.state.project.products.len(), rt.state.project.products[0].size[2]), (1, 1.8));
+    let file = std::env::temp_dir().join("lintel-test-products.json");
+    rt.update(|s, _| s.export_products(&file));
+    let mut other = app(sample::blank());
+    other.update(|s, _| s.import_products(&file));
+    assert_eq!(other.state.project.products, rt.state.project.products);
+    let _ = std::fs::remove_file(&file);
+}

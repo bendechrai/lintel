@@ -600,6 +600,11 @@ fn draw_tool_preview(d: &mut Draw, s: &State, level: &Level) {
                 d.outline(&geom::oriented_rect(cursor, p.size[0], p.size[1], 0.0), 1.5, ink.accent);
             }
         }
+        Tool::Product(index) => {
+            if let Some(p) = s.project.products.get(*index) {
+                d.outline(&geom::oriented_rect(cursor, p.size[0], p.size[1], 0.0), 1.5, ink.accent);
+            }
+        }
         _ => {
             let k = d.px(6.0);
             d.line(add(cursor, [-k, 0.0]), add(cursor, [k, 0.0]), 1.5, ink.accent);
