@@ -311,7 +311,7 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             let thickness = s.wall_width;
             let paint = Finish::paint(0xf2efe8);
             if let Some(l) = level_mut(s) {
-                l.walls.push(Wall { id, a, b, thickness, height: None, base: 0.0, left: paint.clone(), right: paint, openings: vec![], bands: vec![] });
+                l.walls.push(Wall { id, a, b, thickness, height: None, base: 0.0, left: paint.clone(), right: paint, openings: vec![], bands: vec![], layers: vec![] });
             }
             s.touch();
             s.selected = Some(Pick::Wall(id));

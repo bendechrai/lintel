@@ -720,6 +720,24 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
         let hovered = s.hovered == Some(Pick::Wall(w.id));
         d.fill(&wall_outline(level, w), if hovered { ink.wall.mix(ink.accent, 0.35) } else { ink.wall });
     }
+    // Zoomed in, a wall with a build-up shows its layers.
+    if d.cam.zoom > 70.0 {
+        for w in level.walls.iter().filter(|w| !w.layers.is_empty()) {
+            let total: f32 = w.layers.iter().map(|l| l.thickness.max(0.001)).sum();
+            let (len, h) = (w.length(), w.thickness / 2.0);
+            let mut y = h;
+            for layer in &w.layers {
+                let t = layer.thickness.max(0.001) / total * w.thickness;
+                d.fill(&[w.point(0.0, y - t), w.point(len, y - t), w.point(len, y), w.point(0.0, y)], srgb(layer.kind.color()));
+                y -= t;
+                if y > -h + 1e-4 {
+                    d.line(w.point(0.0, y), w.point(len, y), 0.75, ink.wall);
+                }
+            }
+            d.outline(&[w.point(0.0, -h), w.point(len, -h), w.point(len, h), w.point(0.0, h)], 1.25, ink.wall);
+        }
+    }
+
     for w in &level.walls {
         for o in &w.openings {
             draw_opening(&mut d, w, o, s.selected == Some(Pick::Opening(w.id, o.id)));

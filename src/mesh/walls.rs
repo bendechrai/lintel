@@ -156,7 +156,20 @@ fn wall_mesh(cx: &mut Ctx, level: &Level, wall: &Wall) {
     }
 
     let p = |u: f32, y: f32, z: f32| -> V3 { wf.at([u, y, z]) };
-    planar(cx.scene, &[p(ua, -h, zt), p(ub, -h, zt), p(ub, h, zt), p(ua, h, zt)], UP, [ua, -h], &cap, pick);
+    if wall.layers.is_empty() {
+        planar(cx.scene, &[p(ua, -h, zt), p(ub, -h, zt), p(ub, h, zt), p(ua, h, zt)], UP, [ua, -h], &cap, pick);
+    } else {
+        // The top of a wall with a build-up shows it, so a house with its roof off reads as
+        // a cut through the walls: stripes from the left face (+h) to the right.
+        let total: f32 = wall.layers.iter().map(|l| l.thickness.max(0.001)).sum();
+        let mut y = h;
+        for layer in &wall.layers {
+            let w = layer.thickness.max(0.001) / total * t;
+            let s = crate::materials::Surface { pattern: crate::materials::Pattern::Plain, color: crate::materials::linear(layer.kind.color()), scale: 0.0, roughness: 0.9, opacity: 1.0 };
+            planar(cx.scene, &[p(ua, y - w, zt), p(ub, y - w, zt), p(ub, y, zt), p(ua, y, zt)], UP, [ua, y - w], &s, pick);
+            y -= w;
+        }
+    }
     if zb > 1e-3 {
         planar(cx.scene, &[p(ua, -h, zb), p(ub, -h, zb), p(ub, h, zb), p(ua, h, zb)], DOWN, [ua, -h], &cap, pick);
     }

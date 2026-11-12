@@ -19,7 +19,7 @@ struct B {
 
 impl B {
     fn wall(&mut self, a: P2, b: P2, thickness: f32, left: Finish, right: Finish) -> Wall {
-        Wall { id: self.p.id(), a, b, thickness, height: None, base: 0.0, left, right, openings: vec![], bands: vec![] }
+        Wall { id: self.p.id(), a, b, thickness, height: None, base: 0.0, left, right, openings: vec![], bands: vec![], layers: vec![] }
     }
 
     fn opening(&mut self, at: f32, width: f32, height: f32, sill: f32, kind: OpeningKind) -> Opening {
@@ -385,6 +385,17 @@ pub fn house() -> Project {
     drop(switches);
     let id = b.p.id();
     main.fixtures.push(Fixture { controls: hall, label: "Hall lights".into(), ..Fixture::new(id, FixtureKind::Switch { gangs: 1 }, Mount::Wall { wall: hall_east_id, side: WallSide::Left, at: 3.75, height: 1.1 }) });
+
+    // What the walls are made of: clad, insulated studs outside; stud partitions inside;
+    // lined concrete below ground.
+    let presets = Wall::presets();
+    let build = |name: &str| presets.iter().find(|(n, _)| *n == name).map(|(_, l)| l.clone()).unwrap_or_default();
+    for w in &mut main.walls {
+        w.set_layers(build(if w.thickness > 0.15 { "Insulated stud, clad" } else { "Stud partition" }));
+    }
+    for w in &mut lower.walls {
+        w.set_layers(build(if w.thickness > 0.15 { "Concrete, lined" } else { "Stud partition" }));
+    }
 
     b.p.levels = vec![lower, main];
 

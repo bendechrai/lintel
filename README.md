@@ -19,6 +19,8 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
   basement is a level with a negative floor height on ground that falls away.
 - **Walls** with thickness, height (full or partial) and a finish on each face, plus
   finishes over part of a face's height: tiling to a dado, a splashback, wainscoting.
+  A wall can also carry its build-up (lining, studs, insulation, cavity, brick, cladding),
+  which sets its thickness and shows on the plan and on top of the walls with the roof off.
 - **Doors** (hinged, double, sliding, pocket, bifold) with frames, architraves and glazing;
   **garage doors** (sectional, roller, tilt-up) at any width, drawn at any amount open;
   **windows** (fixed, casement, awning, double-hung, sliding, louvre); cased **openings**;

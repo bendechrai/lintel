@@ -47,11 +47,15 @@ fn wall(s: &State, th: &Th, lib: &Library, level: &Level, w: &Wall) -> Vec<El> {
                 w.b = geom::add(w.a, geom::scale(d, v.max(0.05)));
             }
         }),
-        len(s, th, "Thickness", "wall-thickness", w.thickness, move |p, v| {
-            if let Some(w) = p.wall_mut(id) {
-                w.thickness = v.clamp(0.02, 1.5)
-            }
-        }),
+        if w.layers.is_empty() {
+            len(s, th, "Thickness", "wall-thickness", w.thickness, move |p, v| {
+                if let Some(w) = p.wall_mut(id) {
+                    w.thickness = v.clamp(0.02, 1.5)
+                }
+            })
+        } else {
+            fact(th, "Thickness", format!("{} (from its build-up)", units::length(w.thickness, s.project.units)))
+        },
         toggle(th, "Full height", "wall-full", full, on_project("", move |p, on| {
             if let Some(w) = p.wall_mut(id) {
                 w.height = if on { None } else { Some(level_height) }
@@ -81,6 +85,84 @@ fn wall(s: &State, th: &Th, lib: &Library, level: &Level, w: &Wall) -> Vec<El> {
             w.right = f
         }
     }));
+    v.push(section(th, "Build-up, left face to right"));
+    let presets = Wall::presets();
+    let chips = presets.iter().map(|(name, layers)| {
+        let layers = layers.clone();
+        chip(th, format!("layers-{name}"), name, w.layers == layers).on_press(move |s: &mut State| {
+            let layers = layers.clone();
+            s.edit("", |p| {
+                if let Some(w) = p.wall_mut(id) {
+                    w.set_layers(layers)
+                }
+            })
+        })
+    });
+    v.push(row().w_full().flex_wrap().gaps(4.0, 4.0).children(chips));
+    if w.layers.is_empty() {
+        v.push(text("A build-up says what the wall is made of. Its layers add up to the wall's thickness and show on the plan when you zoom in, and on top of the walls with the roof off.").font(SMALL).color(th.dim).wrap());
+    }
+    for (i, layer) in w.layers.iter().enumerate() {
+        let kinds: Vec<(&str, LayerKind)> = LayerKind::ALL.iter().map(|k| (k.name(), *k)).collect();
+        v.push(
+            row()
+                .w_full()
+                .gap(8.0)
+                .mt(4.0)
+                .center_y()
+                .child(rune::el().size(12.0, 12.0).radius(2.0).fill(crate::plan::srgb(layer.kind.color())).border(1.0, th.border))
+                .child(text(format!("{}. {}", i + 1, layer.kind.name())).font(VALUE).color(th.text).grow(1.0))
+                .child(chip(th, format!("layer-{i}-remove"), "Remove", false).on_press(move |s: &mut State| {
+                    s.edit("", |p| {
+                        if let Some(w) = p.wall_mut(id) {
+                            let mut layers = w.layers.clone();
+                            if i < layers.len() {
+                                layers.remove(i);
+                            }
+                            w.set_layers(layers)
+                        }
+                    })
+                })),
+        );
+        v.push(num(s, th, "Thickness", &format!("layer-{i}-thickness"), layer.thickness, Fmt::Length, 0.005, on_project("layer-thickness", move |p: &mut Project, x: f32| {
+            if let Some(w) = p.wall_mut(id) {
+                let mut layers = w.layers.clone();
+                if let Some(l) = layers.get_mut(i) {
+                    l.thickness = x.clamp(0.001, 1.0)
+                }
+                w.set_layers(layers)
+            }
+        })));
+        v.push(choice(th, "Made of", &format!("layer-{i}-kind"), &layer.kind, &kinds, on_project("", move |p: &mut Project, k: LayerKind| {
+            if let Some(l) = p.wall_mut(id).and_then(|w| w.layers.get_mut(i)) {
+                l.kind = k
+            }
+        })));
+    }
+    let mut buttons = row().w_full().gap(6.0).mt(4.0).flex_wrap().child(button(th, "layer-add", "Add a layer", false).on_press(move |s: &mut State| {
+        s.edit("", |p| {
+            if let Some(w) = p.wall_mut(id) {
+                let mut layers = w.layers.clone();
+                if layers.is_empty() {
+                    // Start from the wall as it is: one layer of its whole thickness.
+                    layers.push(Layer { kind: LayerKind::Framing, thickness: w.thickness });
+                } else {
+                    layers.push(Layer { kind: LayerKind::Lining, thickness: 0.01 });
+                }
+                w.set_layers(layers)
+            }
+        })
+    }));
+    if !w.layers.is_empty() {
+        buttons = buttons.child(button(th, "layers-clear", "No build-up", false).on_press(move |s: &mut State| {
+            s.edit("", |p| {
+                if let Some(w) = p.wall_mut(id) {
+                    w.layers.clear()
+                }
+            })
+        }));
+    }
+    v.push(buttons);
     v.push(section(th, "Part-height finishes"));
     if w.bands.is_empty() {
         v.push(text("Tiling to a height, a splashback or wainscoting: a finish over part of one face.").font(SMALL).color(th.dim).wrap());

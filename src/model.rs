@@ -395,6 +395,103 @@ pub struct Wall {
     /// Finishes over part of a face's height: tiling to a dado, a splashback, wainscoting.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bands: Vec<Band>,
+    /// What the wall is made of, from its left face to its right. Empty for a wall that is
+    /// just a thickness. When set, the layers add up to `thickness`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<Layer>,
+}
+
+/// One layer of a wall's build-up.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Layer {
+    pub kind: LayerKind,
+    pub thickness: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LayerKind {
+    /// Plasterboard or plaster.
+    Lining,
+    /// Studs with nothing between them.
+    Framing,
+    /// Studs with insulation between them.
+    InsulatedFraming,
+    Insulation,
+    /// Brick or block.
+    Masonry,
+    Concrete,
+    /// An air gap.
+    Cavity,
+    /// Sheathing, wrap or a membrane.
+    Sheathing,
+    Cladding,
+}
+
+impl LayerKind {
+    pub const ALL: [LayerKind; 9] = [
+        LayerKind::Lining,
+        LayerKind::Framing,
+        LayerKind::InsulatedFraming,
+        LayerKind::Insulation,
+        LayerKind::Masonry,
+        LayerKind::Concrete,
+        LayerKind::Cavity,
+        LayerKind::Sheathing,
+        LayerKind::Cladding,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            LayerKind::Lining => "Lining",
+            LayerKind::Framing => "Studs",
+            LayerKind::InsulatedFraming => "Studs + insulation",
+            LayerKind::Insulation => "Insulation",
+            LayerKind::Masonry => "Brick / block",
+            LayerKind::Concrete => "Concrete",
+            LayerKind::Cavity => "Air gap",
+            LayerKind::Sheathing => "Sheathing",
+            LayerKind::Cladding => "Cladding",
+        }
+    }
+
+    /// The colour it draws in, in a plan and on a cut wall: sRGB.
+    pub fn color(self) -> [f32; 3] {
+        rgb(match self {
+            LayerKind::Lining => 0xece8df,
+            LayerKind::Framing => 0xd9b98a,
+            LayerKind::InsulatedFraming => 0xf0d27a,
+            LayerKind::Insulation => 0xf3c9d2,
+            LayerKind::Masonry => 0xb0624a,
+            LayerKind::Concrete => 0x9d9c97,
+            LayerKind::Cavity => 0xf8f8f6,
+            LayerKind::Sheathing => 0x6f7f62,
+            LayerKind::Cladding => 0x7d8790,
+        })
+    }
+}
+
+impl Wall {
+    /// Common ways to build a wall, left face to right.
+    pub fn presets() -> [(&'static str, Vec<Layer>); 5] {
+        let l = |kind, mm: f32| Layer { kind, thickness: mm / 1000.0 };
+        use LayerKind::*;
+        [
+            ("Stud partition", vec![l(Lining, 10.0), l(Framing, 90.0), l(Lining, 10.0)]),
+            ("Insulated stud, clad", vec![l(Lining, 10.0), l(InsulatedFraming, 90.0), l(Sheathing, 9.0), l(Cavity, 20.0), l(Cladding, 19.0)]),
+            ("Brick veneer", vec![l(Lining, 10.0), l(InsulatedFraming, 90.0), l(Cavity, 40.0), l(Masonry, 110.0)]),
+            ("Double brick", vec![l(Lining, 13.0), l(Masonry, 110.0), l(Cavity, 50.0), l(Masonry, 110.0)]),
+            ("Concrete, lined", vec![l(Lining, 10.0), l(Insulation, 50.0), l(Concrete, 200.0)]),
+        ]
+    }
+
+    /// Sets the build-up and the thickness it adds up to.
+    pub fn set_layers(&mut self, layers: Vec<Layer>) {
+        if !layers.is_empty() {
+            self.thickness = layers.iter().map(|l| l.thickness.max(0.001)).sum();
+        }
+        self.layers = layers;
+    }
 }
 
 /// A finish laid over one face of a wall between two heights above the level's floor.

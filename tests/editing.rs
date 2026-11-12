@@ -140,8 +140,13 @@ fn dragging_a_corner_takes_both_walls_with_it() {
 #[test]
 fn the_inspector_steps_and_takes_typed_lengths() {
     let mut rt = app(sample::house());
-    let wall = level(&rt).walls[1].clone();
-    rt.update(|s, _| s.select(Some(Pick::Wall(wall.id))));
+    let mut wall = level(&rt).walls[1].clone();
+    // A wall with a build-up takes its thickness from its layers; this one is to be plain.
+    wall.layers.clear();
+    rt.update(|s, _| {
+        s.edit("", |p| p.wall_mut(wall.id).unwrap().layers.clear());
+        s.select(Some(Pick::Wall(wall.id)));
+    });
     settle(&mut rt);
 
     press(&mut rt, "wall-thickness+");
@@ -379,4 +384,42 @@ fn a_new_option_is_a_copy_to_change_while_the_original_stays_as_it_was() {
     // Removing the option being edited goes back to the other.
     rt.update(|s, _| s.remove_option());
     assert_eq!(rt.state.project.option_names(), vec!["Existing"]);
+}
+
+#[test]
+fn a_walls_build_up_sets_its_thickness_and_can_be_edited_layer_by_layer() {
+    let mut rt = app(sample::blank());
+    press(&mut rt, "tool-wall");
+    let (a, b) = (on_plan(&rt, [-2.0, 0.0]), on_plan(&rt, [2.0, 0.0]));
+    drag(&mut rt, a, b);
+    let id = level(&rt).walls[0].id;
+    assert!(rt.state.selected == Some(Pick::Wall(id)) && level(&rt).walls[0].layers.is_empty());
+    rt.update(|s, _| s.set_tool(Tool::Select));
+    rt.update(|s, _| s.select(Some(Pick::Wall(id))));
+    settle(&mut rt);
+    press(&mut rt, "layers-Brick veneer");
+    let w = rt.state.project.wall(id).unwrap().clone();
+    assert_eq!(w.layers.len(), 4);
+    assert!((w.thickness - 0.25).abs() < 1e-4, "10 + 90 + 40 + 110 mm: {}", w.thickness);
+    // Thicken the cavity by one step; the wall grows with it.
+    press(&mut rt, "layer-2-thickness+");
+    assert!((rt.state.project.wall(id).unwrap().thickness - 0.255).abs() < 1e-4);
+    // Take the brick off.
+    // (Its Remove button is below the fold of the panel; do what it does.)
+    rt.update(|s, _| {
+        s.edit("", |p| {
+            let w = p.wall_mut(id).unwrap();
+            let mut layers = w.layers.clone();
+            layers.remove(3);
+            w.set_layers(layers)
+        })
+    });
+    let w = rt.state.project.wall(id).unwrap();
+    assert_eq!(w.layers.len(), 3);
+    assert!((w.thickness - 0.145).abs() < 1e-4, "{}", w.thickness);
+    // The top of the wall is drawn in stripes, one a layer.
+    let scene = lintel::mesh::build(&rt.state.project, &lintel::mesh::BuildOptions { terrain: false, ..Default::default() });
+    let top = 2.7;
+    let caps = scene.vertices.iter().filter(|v| (v.pos[2] - top).abs() < 1e-4 && v.normal[2] > 0.9).count();
+    assert_eq!(caps, 3 * 4, "three strips of four corners");
 }

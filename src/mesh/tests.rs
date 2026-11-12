@@ -7,7 +7,7 @@ use crate::model::*;
 use crate::scene::{Vertex, len};
 
 fn wall(id: Id, a: P2, b: P2) -> Wall {
-    Wall { id, a, b, thickness: 0.2, height: None, base: 0.0, left: Finish::paint(0xffffff), right: Finish::of("brick"), openings: vec![], bands: vec![] }
+    Wall { id, a, b, thickness: 0.2, height: None, base: 0.0, left: Finish::paint(0xffffff), right: Finish::of("brick"), openings: vec![], bands: vec![], layers: vec![] }
 }
 
 fn door(style: DoorStyle, open: f32) -> OpeningKind {
