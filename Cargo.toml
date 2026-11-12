@@ -30,7 +30,7 @@ rune = { git = "https://github.com/anomalyco/rune", rev = "8949c69d27b73d23b41ef
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["Window", "Location", "Response", "Document"] }
+web-sys = { version = "0.3", features = ["Window", "Location", "Response", "Document", "Blob", "BlobPropertyBag", "Url", "Element", "HtmlElement", "HtmlAnchorElement", "HtmlInputElement", "FileList", "File"] }
 
 # Rune draws through a wgpu-hal with one extra dx12 function; an app that builds Rune patches it too.
 [patch.crates-io]

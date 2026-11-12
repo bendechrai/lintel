@@ -961,8 +961,15 @@ impl State {
 
     /// Reads a library file of products into the project, replacing ones of the same name.
     pub fn import_products(&mut self, path: &std::path::Path) {
-        let read = std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|t| serde_json::from_str::<Vec<Product>>(&t).map_err(|e| e.to_string()));
-        match read {
+        match std::fs::read_to_string(path) {
+            Ok(text) => self.import_products_text(&path.display().to_string(), &text),
+            Err(e) => self.status = format!("Couldn't read products from {}: {e}", path.display()),
+        }
+    }
+
+    /// Takes a product library as text, from a file called `name`.
+    pub fn import_products_text(&mut self, name: &str, text: &str) {
+        match serde_json::from_str::<Vec<Product>>(text).map_err(|e| e.to_string()) {
             Ok(list) => {
                 let n = list.len();
                 self.edit("", |p| {
@@ -973,18 +980,10 @@ impl State {
                         }
                     }
                 });
-                self.status = format!("{n} products read from {}.", path.display());
+                self.status = format!("{n} products read from {name}.");
             }
-            Err(e) => self.status = format!("Couldn't read products from {}: {e}", path.display()),
+            Err(e) => self.status = format!("Couldn't read products from {name}: {e}"),
         }
-    }
-
-    pub fn export_products(&mut self, path: &std::path::Path) {
-        let json = serde_json::to_string_pretty(&self.project.products).unwrap_or_default();
-        self.status = match std::fs::write(path, json) {
-            Ok(()) => format!("{} products written to {}. Import that file into another project to use them there.", self.project.products.len(), path.display()),
-            Err(e) => format!("Couldn't write {}: {e}", path.display()),
-        };
     }
 
     /// Turn the selected furniture, stair or ceiling fixture by `by` radians.
@@ -1142,6 +1141,24 @@ impl State {
         }
     }
 
+    /// Opens a project from its text, as the browser hands a chosen file over.
+    pub fn open_text(&mut self, name: &str, text: &str) {
+        match serde_json::from_str::<Project>(text) {
+            Ok(project) => {
+                self.replace_project(project, None);
+                self.status = format!("Opened {name}");
+            }
+            Err(e) => self.status = format!("{name} isn't a Lintel project: {e}"),
+        }
+    }
+
+    /// A file name for something made from this project.
+    pub fn file_stem(&self) -> String {
+        let slug: String = self.project.name.to_lowercase().chars().map(|c| if c.is_alphanumeric() { c } else { '-' }).collect();
+        let slug = slug.trim_matches('-').to_string();
+        if slug.is_empty() { "house".into() } else { slug }
+    }
+
     /// Swap in another project, keeping window state (theme, view).
     pub fn replace_project(&mut self, project: Project, path: Option<PathBuf>) {
         let (view, dark, canvas) = (self.view, self.dark, self.canvas);
@@ -1150,6 +1167,8 @@ impl State {
         next.images = self.images.take();
         next.lux.request = std::mem::take(&mut self.lux.request);
         next.geo.request = std::mem::take(&mut self.geo.request);
+        // The conversation and the key belong to the session, not to the project.
+        next.assistant = std::mem::replace(&mut self.assistant, Assistant::new());
         next.load_underlays();
         next.dark = dark;
         next.canvas = canvas;

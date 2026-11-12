@@ -11,7 +11,7 @@ use rune::{AppSpec, Tx};
 
 /// The page's address and fetching, in the browser.
 #[cfg(target_arch = "wasm32")]
-mod web {
+pub mod web {
     use std::cell::RefCell;
 
     use wasm_bindgen::JsCast;
@@ -51,6 +51,63 @@ mod web {
 
     pub fn take() -> Option<Result<Project, String>> {
         FETCHED.with(|slot| slot.borrow_mut().take())
+    }
+
+    thread_local! {
+        static WAKER: RefCell<Option<rune::runtime::Waker>> = const { RefCell::new(None) };
+        static PICKED: RefCell<Option<(&'static str, String, String)>> = const { RefCell::new(None) };
+    }
+
+    pub fn set_waker(waker: rune::runtime::Waker) {
+        WAKER.with(|w| *w.borrow_mut() = Some(waker));
+    }
+
+    /// Hands the browser a file to save: it lands in the downloads folder.
+    pub fn download(name: &str, bytes: &[u8], mime: &str) -> Result<(), String> {
+        let failed = |_| "the browser wouldn't save the file".to_string();
+        let document = web_sys::window().and_then(|w| w.document()).ok_or("no page")?;
+        let parts = js_sys::Array::new();
+        parts.push(&js_sys::Uint8Array::from(bytes));
+        let bag = web_sys::BlobPropertyBag::new();
+        bag.set_type(mime);
+        let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &bag).map_err(failed)?;
+        let url = web_sys::Url::create_object_url_with_blob(&blob).map_err(failed)?;
+        let a: web_sys::HtmlAnchorElement = document.create_element("a").map_err(failed)?.dyn_into().map_err(|_| "no link".to_string())?;
+        a.set_href(&url);
+        a.set_download(name);
+        a.click();
+        let _ = web_sys::Url::revoke_object_url(&url);
+        Ok(())
+    }
+
+    /// Asks for a file from this computer; its text is there to `take_picked` once read.
+    /// `what` says what it is for and comes back with it.
+    pub fn pick(what: &'static str) {
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+        let Some(input) = document.create_element("input").ok().and_then(|e| e.dyn_into::<web_sys::HtmlInputElement>().ok()) else { return };
+        input.set_type("file");
+        input.set_accept(".json,application/json");
+        let chosen = input.clone();
+        let on_change = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(move || {
+            let Some(file) = chosen.files().and_then(|f| f.get(0)) else { return };
+            let name = file.name();
+            wasm_bindgen_futures::spawn_local(async move {
+                let text = wasm_bindgen_futures::JsFuture::from(file.text()).await.ok().and_then(|t| t.as_string()).unwrap_or_default();
+                PICKED.with(|slot| *slot.borrow_mut() = Some((what, name, text)));
+                WAKER.with(|w| {
+                    if let Some(wake) = w.borrow().as_ref() {
+                        wake()
+                    }
+                });
+            });
+        });
+        input.set_onchange(Some(on_change.as_ref().unchecked_ref()));
+        on_change.forget();
+        input.click();
+    }
+
+    pub fn take_picked() -> Option<(&'static str, String, String)> {
+        PICKED.with(|slot| slot.borrow_mut().take())
     }
 
     pub fn set_title(title: &str) {
@@ -107,6 +164,8 @@ fn setup(s: &mut State, waker: rune::runtime::Waker) {
     s.lux.request.set_waker(waker.clone());
     s.assistant.request.set_waker(waker.clone());
     #[cfg(target_arch = "wasm32")]
+    web::set_waker(waker.clone());
+    #[cfg(target_arch = "wasm32")]
     if let Some(url) = crate::share::from_query(&web::address().1) {
         s.status = format!("Fetching {url}…");
         web::fetch(url, waker);
@@ -128,7 +187,17 @@ fn poll(s: &mut State, _: f64, _: &mut Tx) -> bool {
             s.status = format!("{e}. Showing the sample house.");
             true
         }
-        None => s.land_light(),
+        None => match web::take_picked() {
+            Some(("products", name, text)) => {
+                s.import_products_text(&name, &text);
+                true
+            }
+            Some((_, name, text)) => {
+                s.open_text(&name, &text);
+                true
+            }
+            None => s.land_light(),
+        },
     };
     #[cfg(not(target_arch = "wasm32"))]
     let lit = s.land_light();

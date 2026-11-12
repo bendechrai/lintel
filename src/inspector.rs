@@ -1193,7 +1193,7 @@ fn drawing_rows(s: &State, th: &Th) -> Vec<El> {
             (Some(v), _) => format!("drawn at {}", name(v)),
             _ => String::new(),
         }),
-        row().w_full().mt(2.0).child(button(th, "sheet-save", "Save plans as PDF…", false).on_press_tx(crate::ui::save_drawings)),
+        row().w_full().mt(2.0).child(button(th, "sheet-save", "Save drawings as PDF…", false).on_press_tx(crate::ui::save_drawings)),
         text("A landscape page for each level: walls, doors and windows, room names and sizes, fixtures, and dimensions between the walls.").font(SMALL).color(th.dim).wrap(),
     ]
 }

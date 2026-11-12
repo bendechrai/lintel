@@ -19,7 +19,42 @@ fn dialog(title: &str) -> FileDialogOptions {
     FileDialogOptions { title: title.into(), ..Default::default() }.filter("Lintel project", &["json"])
 }
 
+/// Writes `bytes` where the person chooses: through a Save dialog on the desktop, as a
+/// download in the browser. `done` words the status line from where it went.
+fn write_out(s: &mut State, tx: &mut Tx, options: FileDialogOptions, mime: &'static str, bytes: impl Fn(&State) -> Vec<u8> + 'static, done: fn(&str) -> String) {
+    s.commit_editing();
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = tx;
+        let name = options.file_name.clone().unwrap_or_else(|| "lintel".into());
+        s.status = match crate::shell::web::download(&name, &bytes(s), mime) {
+            Ok(()) => done(&format!("{name} to your downloads")),
+            Err(e) => format!("Couldn't save {name}: {e}"),
+        };
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = mime;
+        tx.save_file(options, move |s: &mut State, result, _| match result {
+            Ok(Some(path)) => {
+                s.status = match std::fs::write(&path, bytes(s)) {
+                    Ok(()) => done(&path.display().to_string()),
+                    Err(e) => format!("Couldn't write {}: {e}", path.display()),
+                }
+            }
+            Ok(None) => {}
+            Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+        });
+    }
+}
+
 pub fn open_dialog(_: &mut State, tx: &mut Tx) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = tx;
+        crate::shell::web::pick("project");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     tx.open_file(dialog("Open a project"), |s: &mut State, result, _| match result {
         Ok(Some(path)) => s.open(path),
         Ok(None) => {}
@@ -29,47 +64,57 @@ pub fn open_dialog(_: &mut State, tx: &mut Tx) {
 
 pub fn save(s: &mut State, tx: &mut Tx, ask: bool) {
     s.commit_editing();
-    if s.path.is_some() && !ask {
-        s.save();
-        return;
+    #[cfg(target_arch = "wasm32")]
+    {
+        // A browser can't write back to the file it opened: each save is a fresh download.
+        let _ = ask;
+        let mut options = dialog("Save the project");
+        options.file_name = Some(format!("{}.lintel.json", s.file_stem()));
+        write_out(s, tx, options, "application/json", |s| serde_json::to_string_pretty(&s.project).unwrap_or_default().into_bytes(), |to| format!("Saved {to}. Open… reads it back."));
+        s.dirty = false;
     }
-    let mut options = dialog("Save the project");
-    options.file_name = Some(format!("{}.lintel.json", s.project.name.to_lowercase().replace(' ', "-")));
-    tx.save_file(options, |s: &mut State, result, _| match result {
-        Ok(Some(path)) => s.save_to(path),
-        Ok(None) => {}
-        // No dialog on this desktop: save beside where Lintel was started.
-        Err(_) => s.save(),
-    });
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if s.path.is_some() && !ask {
+            s.save();
+            return;
+        }
+        let mut options = dialog("Save the project");
+        options.file_name = Some(format!("{}.lintel.json", s.file_stem()));
+        tx.save_file(options, |s: &mut State, result, _| match result {
+            Ok(Some(path)) => s.save_to(path),
+            Ok(None) => {}
+            // No dialog on this desktop: save beside where Lintel was started.
+            Err(_) => s.save(),
+        });
+    }
 }
 
 /// Saves the 3D or elevation view as a PNG.
 pub fn save_picture(s: &mut State, tx: &mut Tx) {
     s.commit_editing();
-    let mut options = FileDialogOptions { title: "Save a picture of this view".into(), ..Default::default() }.filter("PNG image", &["png"]);
-    options.file_name = Some(format!("{}.png", s.project.name.to_lowercase().replace(' ', "-")));
-    tx.save_file(options, |s: &mut State, result, _| match result {
-        Ok(Some(path)) => s.capture = Some(path),
-        Ok(None) => {}
-        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
-    });
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = tx;
+        s.status = "Saving a picture needs the desktop app. In the browser, take a screenshot.".into();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut options = FileDialogOptions { title: "Save a picture of this view".into(), ..Default::default() }.filter("PNG image", &["png"]);
+        options.file_name = Some(format!("{}.png", s.file_stem()));
+        tx.save_file(options, |s: &mut State, result, _| match result {
+            Ok(Some(path)) => s.capture = Some(path),
+            Ok(None) => {}
+            Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+        });
+    }
 }
 
-/// Saves dimensioned plans of every level as a PDF.
+/// Saves the dimensioned plans and elevations as a PDF.
 pub fn save_drawings(s: &mut State, tx: &mut Tx) {
-    s.commit_editing();
     let mut options = FileDialogOptions { title: "Save the drawings as a PDF".into(), ..Default::default() }.filter("PDF", &["pdf"]);
-    options.file_name = Some(format!("{}-drawings.pdf", s.project.name.to_lowercase().replace(' ', "-")));
-    tx.save_file(options, |s: &mut State, result, _| match result {
-        Ok(Some(path)) => {
-            s.status = match std::fs::write(&path, crate::drawing::drawings(&s.project, s.sheet)) {
-                Ok(()) => format!("Saved {}: a plan of each level and an elevation of each face.", path.display()),
-                Err(e) => format!("Couldn't write {}: {e}", path.display()),
-            }
-        }
-        Ok(None) => {}
-        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
-    });
+    options.file_name = Some(format!("{}-drawings.pdf", s.file_stem()));
+    write_out(s, tx, options, "application/pdf", |s| crate::drawing::drawings(&s.project, s.sheet), |to| format!("Saved {to}: a plan of each level and an elevation of each face."));
 }
 
 fn products_dialog(title: &str) -> FileDialogOptions {
@@ -77,6 +122,12 @@ fn products_dialog(title: &str) -> FileDialogOptions {
 }
 
 pub fn import_products(_: &mut State, tx: &mut Tx) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = tx;
+        crate::shell::web::pick("products");
+    }
+    #[cfg(not(target_arch = "wasm32"))]
     tx.open_file(products_dialog("Import a product library"), |s: &mut State, result, _| match result {
         Ok(Some(path)) => s.import_products(&path),
         Ok(None) => {}
@@ -84,29 +135,15 @@ pub fn import_products(_: &mut State, tx: &mut Tx) {
     });
 }
 
-pub fn export_products(_: &mut State, tx: &mut Tx) {
-    tx.save_file(products_dialog("Export this project's products"), |s: &mut State, result, _| match result {
-        Ok(Some(path)) => s.export_products(&path),
-        Ok(None) => {}
-        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
-    });
+pub fn export_products(s: &mut State, tx: &mut Tx) {
+    write_out(s, tx, products_dialog("Export this project's products"), "application/json", |s| serde_json::to_string_pretty(&s.project.products).unwrap_or_default().into_bytes(), |to| format!("Products written to {to}. Import that file into another project to use them there."));
 }
 
 /// Exports the house as a glTF 3D model.
 pub fn export_model(s: &mut State, tx: &mut Tx) {
-    s.commit_editing();
     let mut options = FileDialogOptions { title: "Export the house as a 3D model".into(), ..Default::default() }.filter("glTF model", &["gltf"]);
-    options.file_name = Some(format!("{}.gltf", s.project.name.to_lowercase().replace(' ', "-")));
-    tx.save_file(options, |s: &mut State, result, _| match result {
-        Ok(Some(path)) => {
-            s.status = match std::fs::write(&path, crate::export::gltf(&s.project)) {
-                Ok(()) => format!("Exported {}. It opens in Blender and most 3D software.", path.display()),
-                Err(e) => format!("Couldn't write {}: {e}", path.display()),
-            }
-        }
-        Ok(None) => {}
-        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
-    });
+    options.file_name = Some(format!("{}.gltf", s.file_stem()));
+    write_out(s, tx, options, "model/gltf+json", |s| crate::export::gltf(&s.project).into_bytes(), |to| format!("Exported {to}. It opens in Blender and most 3D software."));
 }
 
 /// Copies a link that opens this project in the browser.

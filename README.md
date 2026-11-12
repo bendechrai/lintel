@@ -226,8 +226,13 @@ scripts/web-build.sh
 python3 -m http.server 8000 -d target/web
 ```
 
-That serves the landing page (`site/`) at the root and the app under `app/`. In headless Chromium the page loads linked and fetched projects and draws every view with no
-GPU errors. Saving, opening files and the elevation fetch don't work in the browser yet.
+That serves the landing page (`site/`) at the root and the app under `app/`.
+
+In the browser, **Save** downloads the project file and **Open…** reads one back from your
+computer; drawings, the 3D model and product libraries download the same way. Checked in
+headless Chromium: a saved project reopens and saves again unchanged, linked and fetched
+projects load, and every view draws with no GPU or console errors. Saving a picture, the
+elevation fetch and the assistant need the desktop app.
 
 ## Not yet
 

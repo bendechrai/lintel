@@ -488,11 +488,22 @@ fn a_piece_saved_as_a_product_places_again_at_its_true_size_and_travels_in_a_lib
     });
     assert_eq!((rt.state.project.products.len(), rt.state.project.products[0].size[2]), (1, 1.8));
     let file = std::env::temp_dir().join("lintel-test-products.json");
-    rt.update(|s, _| s.export_products(&file));
+    std::fs::write(&file, serde_json::to_string_pretty(&rt.state.project.products).unwrap()).unwrap();
     let mut other = app(sample::blank());
     other.update(|s, _| s.import_products(&file));
     assert_eq!(other.state.project.products, rt.state.project.products);
     let _ = std::fs::remove_file(&file);
+    // The browser hands a chosen project over as text; the assistant's key outlives the swap.
+    let saved = serde_json::to_string(&rt.state.project).unwrap();
+    other.update(|s, _| {
+        s.assistant.key.replace_text("sk-test");
+        s.open_text("house.lintel.json", &saved);
+    });
+    assert_eq!(other.state.project, rt.state.project);
+    assert_eq!((other.state.status.as_str(), other.state.assistant.key.text.as_str()), ("Opened house.lintel.json", "sk-test"));
+    other.update(|s, _| s.open_text("notes.json", "{\"hello\": 1}"));
+    assert!(other.state.status.starts_with("notes.json isn't a Lintel project"), "{}", other.state.status);
+    assert_eq!(other.state.project, rt.state.project);
 }
 
 #[test]
