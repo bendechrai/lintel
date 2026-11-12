@@ -81,6 +81,52 @@ fn wall(s: &State, th: &Th, lib: &Library, level: &Level, w: &Wall) -> Vec<El> {
             w.right = f
         }
     }));
+    v.push(section(th, "Part-height finishes"));
+    if w.bands.is_empty() {
+        v.push(text("Tiling to a height, a splashback or wainscoting: a finish over part of one face.").font(SMALL).color(th.dim).wrap());
+    }
+    for (i, band) in w.bands.iter().enumerate() {
+        fn band_mut(p: &mut Project, wall: Id, i: usize) -> Option<&mut Band> {
+            p.wall_mut(wall)?.bands.get_mut(i)
+        }
+        let step = units::snap_step(s.project.units);
+        v.push(choice(th, "On the", &format!("band-{i}-side"), &band.side, &SIDES, on_project("", move |p: &mut Project, x: WallSide| {
+            if let Some(b) = band_mut(p, id, i) {
+                b.side = x
+            }
+        })));
+        v.push(num(s, th, "From", &format!("band-{i}-from"), band.from, Fmt::Length, step, on_project("band-from", move |p: &mut Project, x: f32| {
+            if let Some(b) = band_mut(p, id, i) {
+                b.from = x.clamp(-5.0, b.to - 0.01)
+            }
+        })));
+        v.push(num(s, th, "Up to", &format!("band-{i}-to"), band.to, Fmt::Length, step, on_project("band-to", move |p: &mut Project, x: f32| {
+            if let Some(b) = band_mut(p, id, i) {
+                b.to = x.max(b.from + 0.01)
+            }
+        })));
+        v.push(finish(s, th, lib, "Finish", &format!("band-{i}-finish"), &band.finish, on_project("", move |p: &mut Project, f: Finish| {
+            if let Some(b) = band_mut(p, id, i) {
+                b.finish = f
+            }
+        })));
+        v.push(row().w_full().pl(104.0).child(chip(th, format!("band-{i}-remove"), "Remove", false).on_press(move |s: &mut State| {
+            s.edit("", |p| {
+                if let Some(w) = p.wall_mut(id) {
+                    if i < w.bands.len() {
+                        w.bands.remove(i);
+                    }
+                }
+            })
+        })));
+    }
+    v.push(row().w_full().mt(2.0).child(button(th, "band-add", "Add a part-height finish", false).on_press(move |s: &mut State| {
+        s.edit("", |p| {
+            if let Some(w) = p.wall_mut(id) {
+                w.bands.push(Band { side: WallSide::Left, from: 0.0, to: 1.2, finish: Finish::colored("subway_tile", rgb(0xf6f6f3)) });
+            }
+        })
+    })));
     v.push(fact(th, "Openings", format!("{}", w.openings.len())));
     v.push(
         row().w_full().gap(6.0).mt(12.0).flex_wrap().child(button(th, "wall-flip", "Swap faces", false).on_press(move |s: &mut State| {
@@ -349,6 +395,35 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
                 r.ceiling = f
             }
         }));
+    }
+    v.push(section(th, "Trim"));
+    for (label, key, trim, cornice) in [("Skirting", "room-skirting", &r.skirting, false), ("Cornice", "room-cornice", &r.cornice, true)] {
+        fn slot(r: &mut Room, cornice: bool) -> &mut Option<Trim> {
+            if cornice { &mut r.cornice } else { &mut r.skirting }
+        }
+        v.push(toggle(th, label, key, trim.is_some(), on_project("", move |p: &mut Project, on: bool| {
+            if let Some(r) = p.room_mut(id) {
+                *slot(r, cornice) = on.then(|| if cornice { Trim::cornice() } else { Trim::skirting() })
+            }
+        })));
+        if let Some(t) = trim {
+            let (kh, kd, kf): (&'static str, &'static str, &'static str) = if cornice { ("cornice-height", "cornice-depth", "cornice-finish") } else { ("skirting-height", "skirting-depth", "skirting-finish") };
+            v.push(len(s, th, "Height", kh, t.height, move |p, x| {
+                if let Some(Some(t)) = p.room_mut(id).map(|r| slot(r, cornice)) {
+                    t.height = x.clamp(0.01, 0.6)
+                }
+            }));
+            v.push(len(s, th, "Stands off", kd, t.depth, move |p, x| {
+                if let Some(Some(t)) = p.room_mut(id).map(|r| slot(r, cornice)) {
+                    t.depth = x.clamp(0.003, 0.4)
+                }
+            }));
+            v.push(fin(s, th, lib, "Finish", kf, &t.finish, move |p, f| {
+                if let Some(Some(t)) = p.room_mut(id).map(|r| slot(r, cornice)) {
+                    t.finish = f
+                }
+            }));
+        }
     }
     v.push(section(th, "Light"));
     let targets = [("None", None), ("150", Some(150.0f32)), ("300", Some(300.0)), ("500", Some(500.0))];

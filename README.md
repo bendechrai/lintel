@@ -17,7 +17,8 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 
 - **Levels** with their own floor height, ceiling height and floor thickness. A walk-out
   basement is a level with a negative floor height on ground that falls away.
-- **Walls** with thickness, height (full or partial) and a finish on each face.
+- **Walls** with thickness, height (full or partial) and a finish on each face, plus
+  finishes over part of a face's height: tiling to a dado, a splashback, wainscoting.
 - **Doors** (hinged, double, sliding, pocket, bifold) with frames, architraves and glazing;
   **garage doors** (sectional, roller, tilt-up) at any width, drawn at any amount open;
   **windows** (fixed, casement, awning, double-hung, sliding, louvre); cased **openings**;
@@ -25,6 +26,7 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
 - **Rooms**: floor outlines of any shape with their own floor finish, ceiling finish, ceiling
   height and floor offset. Where there is no room there is no floor, which is how a stairwell
   stays open.
+  A room can have a skirting board and a cornice, which stop at doorways.
 - **Stairs**, **roofs** (gable, hip, shed, flat).
 - **Fixtures**: power and data outlets, light switches, thermostats, smoke detectors,
   downlights, recessed tube lights, LED strips in diffuser channels, surface and pendant

@@ -25,6 +25,7 @@ pub fn ceiling_at(level: &Level, p: P2) -> f32 {
 pub fn build(cx: &mut Ctx, level: &Level, ceilings: bool) {
     for room in &level.rooms {
         room_mesh(cx, level, room, ceilings);
+        trims(cx, level, room, ceilings);
     }
     for stair in &level.stairs {
         stair_mesh(cx, level, stair);
@@ -118,6 +119,76 @@ fn stair_mesh(cx: &mut Ctx, level: &Level, stair: &Stair) {
             }
             let z = (riser + rail_height) * cos_pitch;
             cuboid(cx.scene, &slope, [0.0, y - 0.025, z], [length, y + 0.025, z + 0.04], &s, pick);
+        }
+    }
+}
+
+/// Skirting boards and cornices: along every stretch of wall that bounds the room, on the
+/// room's side of it, with gaps in the skirting where a door or opening reaches the floor.
+fn trims(cx: &mut Ctx, level: &Level, room: &Room, ceilings: bool) {
+    if room.skirting.is_none() && room.cornice.is_none() {
+        return;
+    }
+    let outline = ccw(&room.outline);
+    if outline.len() < 3 {
+        return;
+    }
+    let pick = cx.scene.pick_id(Some(Pick::Room(room.id)));
+    let floor = room.floor_offset;
+    let top = floor + room.ceiling_height.unwrap_or(level.height);
+    for wall in &level.walls {
+        let len = wall.length();
+        if len < 1e-3 {
+            continue;
+        }
+        let (d, n) = wall.frame();
+        let h = wall.thickness / 2.0;
+        let wf = Frame3::upright([wall.a[0], wall.a[1], level.elevation], d);
+        for i in 0..outline.len() {
+            let (a, b) = (outline[i], outline[(i + 1) % outline.len()]);
+            let e = [b[0] - a[0], b[1] - a[1]];
+            let el = (e[0] * e[0] + e[1] * e[1]).sqrt();
+            if el < 1e-3 {
+                continue;
+            }
+            // The edge must lie along this wall: parallel to it and on its centre line.
+            let across = |p: P2| (p[0] - wall.a[0]) * n[0] + (p[1] - wall.a[1]) * n[1];
+            let along = |p: P2| (p[0] - wall.a[0]) * d[0] + (p[1] - wall.a[1]) * d[1];
+            if (e[0] * n[0] + e[1] * n[1]).abs() / el > 0.02 || across(a).abs() > h + 0.03 || across(b).abs() > h + 0.03 {
+                continue;
+            }
+            let (t0, t1) = (along(a).min(along(b)).max(0.0), along(a).max(along(b)).min(len));
+            if t1 - t0 < 0.05 {
+                continue;
+            }
+            // The room is to the left of a counter-clockwise edge; which face of the wall is that?
+            let inward = [-e[1] / el, e[0] / el];
+            let side = if inward[0] * n[0] + inward[1] * n[1] >= 0.0 { 1.0 } else { -1.0 };
+            let strip = |cx: &mut Ctx, from: f32, to: f32, z0: f32, z1: f32, depth: f32, finish: &Finish| {
+                if to - from < 0.01 {
+                    return;
+                }
+                let s = cx.surf(finish);
+                let (y0, y1) = if side > 0.0 { (h, h + depth) } else { (-h - depth, -h) };
+                cuboid(cx.scene, &wf, [from, y0, z0], [to, y1, z1], &s, pick);
+            };
+            if let Some(trim) = &room.skirting {
+                // Leave out wherever something opens down to the floor.
+                let mut gaps: Vec<(f32, f32)> = wall.openings.iter().filter(|o| o.sill < trim.height && !matches!(o.kind, crate::model::OpeningKind::Recess { .. })).map(|o| (o.at - o.width / 2.0 - 0.07, o.at + o.width / 2.0 + 0.07)).collect();
+                gaps.sort_by(|x, y| x.0.total_cmp(&y.0));
+                let mut from = t0;
+                for (g0, g1) in gaps {
+                    if g1 <= from || g0 >= t1 {
+                        continue;
+                    }
+                    strip(cx, from, g0.min(t1), floor, floor + trim.height, trim.depth, &trim.finish);
+                    from = from.max(g1);
+                }
+                strip(cx, from, t1, floor, floor + trim.height, trim.depth, &trim.finish);
+            }
+            if let Some(trim) = room.cornice.as_ref().filter(|_| room.has_ceiling && ceilings) {
+                strip(cx, t0, t1, top - trim.height - 0.005, top - 0.005, trim.depth, &trim.finish);
+            }
         }
     }
 }

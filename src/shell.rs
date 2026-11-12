@@ -319,6 +319,16 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.delete_selected();
         s.edit("", |p| p.option = "Open-plan living".into());
     }),
+    ("kitchen", |s| {
+        s.bare = true;
+        s.set_view(ViewMode::Model);
+        let main = s.project.levels.last().map(|l| l.id);
+        s.set_options(|o| o.top_level = main);
+        s.camera.target = [8.6, 6.8, 1.0];
+        s.camera.yaw = 0.25;
+        s.camera.pitch = 0.42;
+        s.camera.distance = 6.5;
+    }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 

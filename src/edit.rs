@@ -311,7 +311,7 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             let thickness = s.wall_width;
             let paint = Finish::paint(0xf2efe8);
             if let Some(l) = level_mut(s) {
-                l.walls.push(Wall { id, a, b, thickness, height: None, base: 0.0, left: paint.clone(), right: paint, openings: vec![] });
+                l.walls.push(Wall { id, a, b, thickness, height: None, base: 0.0, left: paint.clone(), right: paint, openings: vec![], bands: vec![] });
             }
             s.touch();
             s.selected = Some(Pick::Wall(id));
@@ -321,7 +321,7 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             let id = s.project.id();
             if let Some(l) = level_mut(s) {
                 let name = format!("Room {}", l.rooms.len() + 1);
-                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None });
+                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None });
             }
             s.touch();
             s.tool = Tool::Select;

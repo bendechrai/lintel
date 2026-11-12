@@ -143,6 +143,18 @@ fn wall_mesh(cx: &mut Ctx, level: &Level, wall: &Wall) {
     face(cx, &wf, h, 1.0, whole, &cut(WallSide::Right), &left, pick);
     face(cx, &wf, -h, -1.0, whole, &cut(WallSide::Left), &right, pick);
 
+    // Part-height finishes lie a few millimetres proud of the face they cover.
+    for band in &wall.bands {
+        let (z0, z1) = (band.from.max(zb), band.to.min(zt));
+        if z1 - z0 < 1e-3 {
+            continue;
+        }
+        let sgn = sign(band.side);
+        let through: Vec<Hole> = cut(if sgn > 0.0 { WallSide::Right } else { WallSide::Left }).into_iter().filter(|o| o.z0 < z1 && o.z1 > z0).map(|o| Hole { z0: o.z0.max(z0), z1: o.z1.min(z1), ..o }).collect();
+        let s = cx.surf(&band.finish);
+        face(cx, &wf, sgn * (h + 0.004), sgn, Hole { u0: ua.max(0.0), u1: ub.min(l), z0, z1 }, &through, &s, pick);
+    }
+
     let p = |u: f32, y: f32, z: f32| -> V3 { wf.at([u, y, z]) };
     planar(cx.scene, &[p(ua, -h, zt), p(ub, -h, zt), p(ub, h, zt), p(ua, h, zt)], UP, [ua, -h], &cap, pick);
     if zb > 1e-3 {

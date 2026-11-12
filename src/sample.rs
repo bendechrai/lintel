@@ -19,7 +19,7 @@ struct B {
 
 impl B {
     fn wall(&mut self, a: P2, b: P2, thickness: f32, left: Finish, right: Finish) -> Wall {
-        Wall { id: self.p.id(), a, b, thickness, height: None, base: 0.0, left, right, openings: vec![] }
+        Wall { id: self.p.id(), a, b, thickness, height: None, base: 0.0, left, right, openings: vec![], bands: vec![] }
     }
 
     fn opening(&mut self, at: f32, width: f32, height: f32, sill: f32, kind: OpeningKind) -> Opening {
@@ -37,7 +37,7 @@ impl B {
     }
 
     fn room(&mut self, name: &str, outline: &[P2], floor: Finish) -> Room {
-        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }
+        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }
     }
 
     fn fixture(&mut self, kind: FixtureKind, mount: Mount) -> Fixture {
@@ -125,7 +125,8 @@ pub fn house() -> Project {
     spine.openings.push(b.door(1.9, Hinge::End, WallSide::Left));
     spine.openings.push(b.door(3.6, Hinge::Start, WallSide::Left));
     let bed_south = b.wall([11.2, 6.0], [15.0, 6.0], 0.115, inside(), inside());
-    let bath_south = b.wall([11.2, 3.4], [15.0, 3.4], 0.115, inside(), Finish::paint(0xe4e2dc));
+    let mut bath_south = b.wall([11.2, 3.4], [15.0, 3.4], 0.115, inside(), Finish::paint(0xe4e2dc));
+    bath_south.bands.push(Band { side: WallSide::Left, from: 0.0, to: 1.2, finish: Finish::colored("tile_small", rgb(0xe9eef0)) });
     lower.walls = vec![front, east, back, west, rec_south, spine, bed_south, bath_south];
 
     lower.rooms.push(b.room("Rec room", &rect(6.2, 4.6, 11.2, 11.0), Finish::colored("carpet", rgb(0x8d8a84))));
@@ -228,7 +229,9 @@ pub fn house() -> Project {
     let mut hall_east = b.wall([8.4, 0.0], [8.4, 4.6], 0.115, inside(), inside());
     hall_east.openings.push(b.opening(2.5, 1.8, 2.2, 0.0, OpeningKind::Passage { frame: Some(Frame::default()) }));
     hall_east.openings.push(b.opening(0.6, 0.5, 0.9, 1.0, OpeningKind::Recess { side: WallSide::Left, depth: 0.08, finish: Finish::of("oak") }));
-    let stair_east = b.wall([7.4, 4.6], [7.4, 8.6], 0.115, inside(), inside());
+    let mut stair_east = b.wall([7.4, 4.6], [7.4, 8.6], 0.115, inside(), inside());
+    // A tiled splashback between the bench and the wall cabinets.
+    stair_east.bands.push(Band { side: WallSide::Right, from: 0.9, to: 1.45, finish: Finish::colored("subway_tile", rgb(0xdfe9e6)) });
     let stair_north = b.wall([6.2, 8.6], [7.4, 8.6], 0.115, inside(), inside());
     let mut pantry_east = b.wall([7.4, 8.6], [7.4, 11.0], 0.115, inside(), inside());
     pantry_east.openings.push(b.door(1.2, Hinge::End, WallSide::Right));
@@ -258,6 +261,11 @@ pub fn house() -> Project {
     deck.has_ceiling = false;
     deck.floor_offset = -0.03;
     main.rooms.push(deck);
+    // Skirting and cornices in the finished rooms.
+    for room in main.rooms.iter_mut().filter(|r| ["Entry hall", "Living room", "Kitchen & dining", "Pantry"].contains(&r.name.as_str())) {
+        room.skirting = Some(Trim::skirting());
+        room.cornice = Some(Trim::cornice());
+    }
 
     for (key, at, turn) in [
         // Garage.

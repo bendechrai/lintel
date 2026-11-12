@@ -392,6 +392,18 @@ pub struct Wall {
     pub right: Finish,
     #[serde(default)]
     pub openings: Vec<Opening>,
+    /// Finishes over part of a face's height: tiling to a dado, a splashback, wainscoting.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bands: Vec<Band>,
+}
+
+/// A finish laid over one face of a wall between two heights above the level's floor.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Band {
+    pub side: WallSide,
+    pub from: f32,
+    pub to: f32,
+    pub finish: Finish,
 }
 
 impl Wall {
@@ -601,9 +613,35 @@ pub struct Room {
     /// False for a deck, a porch or a carport: a floor with nothing over it.
     #[serde(default = "yes")]
     pub has_ceiling: bool,
+    /// A board along the foot of the room's walls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skirting: Option<Trim>,
+    /// A moulding where the walls meet the ceiling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cornice: Option<Trim>,
     /// The light level this room should reach, in lux, if it has a target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_lux: Option<f32>,
+}
+
+/// A strip of trim that runs round a room: a skirting board or a cornice.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Trim {
+    /// How tall it is on the wall.
+    pub height: f32,
+    /// How far it stands off the wall.
+    pub depth: f32,
+    pub finish: Finish,
+}
+
+impl Trim {
+    pub fn skirting() -> Trim {
+        Trim { height: 0.09, depth: 0.015, finish: Finish::paint(0xf7f5f0) }
+    }
+
+    pub fn cornice() -> Trim {
+        Trim { height: 0.075, depth: 0.075, finish: Finish::paint(0xfafaf7) }
+    }
 }
 
 /// A straight flight. It starts at `at` on this level's floor and climbs `rise` metres toward

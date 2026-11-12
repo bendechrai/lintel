@@ -7,7 +7,7 @@ use crate::model::*;
 use crate::scene::{Vertex, len};
 
 fn wall(id: Id, a: P2, b: P2) -> Wall {
-    Wall { id, a, b, thickness: 0.2, height: None, base: 0.0, left: Finish::paint(0xffffff), right: Finish::of("brick"), openings: vec![] }
+    Wall { id, a, b, thickness: 0.2, height: None, base: 0.0, left: Finish::paint(0xffffff), right: Finish::of("brick"), openings: vec![], bands: vec![] }
 }
 
 fn door(style: DoorStyle, open: f32) -> OpeningKind {
@@ -49,7 +49,7 @@ fn house() -> Project {
         Opening { id: 44, at: 4.2, width: 0.5, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Tilt, inside: WallSide::Left, open: 0.5, panels: 1, finish: Finish::paint(0xcccccc) }) },
     ];
     level.walls = vec![south, east, north, west, nib];
-    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }];
+    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![
         Stair { id: 60, at: [1.0, 1.0], direction: 0.0, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: true, railing: Railing::Both },
         Stair { id: 61, at: [1.0, 3.0], direction: 0.3, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: false, railing: Railing::Left },
@@ -83,7 +83,7 @@ fn house() -> Project {
 
     let mut upper = Level::new(2, "Upper", 2.9, 2.4);
     upper.walls = vec![wall(70, [0.0, 0.0], [6.0, 0.0])];
-    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, target_lux: None }];
+    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
 
     let roof = |id: Id, shape: RoofShape, center: P2| Roof { id, name: "Roof".into(), shape, center, size: [7.0, 4.5], turn: 0.2, base: 5.3, pitch: 0.5, overhang: 0.4, thickness: 0.2, finish: Finish::of("shingle"), gable: Finish::of("siding"), visible: true };
     Project {
@@ -258,7 +258,7 @@ fn an_empty_project_builds_to_nothing() {
     let mut project = project;
     let mut level = Level::new(1, "L", 0.0, 2.4);
     level.walls = vec![wall(1, [1.0, 1.0], [1.0, 1.0])];
-    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, target_lux: None }];
+    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![Stair { id: 3, at: [0.0, 0.0], direction: 0.0, width: 1.0, run: 0.0, rise: 3.0, steps: 0, tread: Finish::of("oak"), closed: true, railing: Railing::Both }];
     project.levels = vec![level];
     assert!(build(&project, &BuildOptions::default()).vertices.is_empty());
@@ -348,4 +348,65 @@ fn a_garage_door_rides_up_and_back_under_the_ceiling() {
     set(&mut project, 1.0);
     let (lo, hi, reach) = span(&project);
     assert!(lo > 2.05 && hi < 2.25 && reach < 3.9, "open: {lo} {hi} {reach}");
+}
+
+#[test]
+fn skirting_runs_along_a_rooms_walls_and_stops_at_doors() {
+    use crate::model::Trim;
+    let mut project = house();
+    let plain = build(&project, &BuildOptions { terrain: false, ..Default::default() }).vertices.len();
+    let level = &mut project.levels[0];
+    let room = level.rooms[0].id;
+    level.rooms[0].skirting = Some(Trim::skirting());
+    level.rooms[0].cornice = Some(Trim::cornice());
+    let scene = build(&project, &BuildOptions { terrain: false, ..Default::default() });
+    assert!(scene.vertices.len() > plain, "trim adds geometry");
+    // Nothing of the room's stands in a doorway at skirting height: sample the door's width
+    // on the wall with the door, just above the floor and just off the face.
+    let level = &project.levels[0];
+    let pick = pick_of(&scene, Pick::Room(room));
+    let floor = level.elevation + level.rooms[0].floor_offset;
+    let low: Vec<_> = scene.vertices.iter().filter(|v| v.pick == pick && v.pos[2] > floor + 0.005 && v.pos[2] < floor + 0.2).collect();
+    assert!(!low.is_empty(), "there is skirting");
+    for wall in &level.walls {
+        for o in wall.openings.iter().filter(|o| o.sill < 0.05) {
+            let (d, _) = wall.frame();
+            for v in &low {
+                let along = (v.pos[0] - wall.a[0]) * d[0] + (v.pos[1] - wall.a[1]) * d[1];
+                let off = crate::geom::segment_distance([v.pos[0], v.pos[1]], wall.a, wall.b);
+                if off < wall.thickness / 2.0 + 0.05 {
+                    assert!((along - o.at).abs() > o.width / 2.0 - 0.001, "skirting crosses a door at {along}");
+                }
+            }
+        }
+    }
+    // The cornice is up at the ceiling.
+    let top = floor + level.rooms[0].ceiling_height.unwrap_or(level.height);
+    assert!(scene.vertices.iter().any(|v| v.pick == pick && v.pos[2] > top - 0.09 && v.pos[2] < top && (v.normal[2]).abs() < 0.5));
+}
+
+#[test]
+fn a_part_height_finish_covers_its_band_of_one_face_and_goes_round_openings() {
+    use crate::model::{Band, WallSide};
+    let mut project = house();
+    let wall = project.levels[0].walls.iter().position(|w| !w.openings.is_empty()).unwrap();
+    let before = build(&project, &BuildOptions { terrain: false, ..Default::default() });
+    project.levels[0].walls[wall].bands.push(Band { side: WallSide::Left, from: 0.0, to: 1.2, finish: Finish::of("slate") });
+    let after = build(&project, &BuildOptions { terrain: false, ..Default::default() });
+    let added = &after.vertices[..];
+    let slate = crate::materials::Library::builtin().surface(&Finish::of("slate"));
+    let tiles: Vec<_> = added.iter().filter(|v| v.pattern == slate.pattern as u32 as f32 && (v.color[0] - slate.color[0]).abs() < 1e-4).collect();
+    assert!(after.vertices.len() > before.vertices.len() && !tiles.is_empty());
+    let floor = project.levels[0].elevation;
+    assert!(tiles.iter().all(|v| v.pos[2] >= floor - 1e-3 && v.pos[2] <= floor + 1.2 + 1e-3), "it stays within its heights");
+    // No tile inside a door's width below its head.
+    let w = &project.levels[0].walls[wall];
+    let (d, _) = w.frame();
+    for o in &w.openings {
+        for v in &tiles {
+            let along = (v.pos[0] - w.a[0]) * d[0] + (v.pos[1] - w.a[1]) * d[1];
+            let z = v.pos[2] - floor;
+            assert!(!((along - o.at).abs() < o.width / 2.0 - 1e-3 && z > o.sill + 1e-3 && z < (o.sill + o.height).min(1.2) - 1e-3), "tile inside an opening");
+        }
+    }
 }
