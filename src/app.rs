@@ -35,6 +35,8 @@ pub enum Tool {
     Furniture(String),
     Patch,
     Roof,
+    Barrier(BarrierKind),
+    Plant(PlantKind),
     /// Drawing a line along a known length on the floor plan image, to set its scale.
     Calibrate,
 }
@@ -51,6 +53,8 @@ impl Tool {
             Tool::Furniture(_) => "Click to place it. Press R to turn the selected piece.",
             Tool::Patch => "Drag a rectangle of ground to surface (a driveway, path or patio).",
             Tool::Roof => "Drag a rectangle over the walls the roof covers.",
+            Tool::Barrier(_) => "Drag along the line it follows. Afterwards, drag its ends, or double-click it to add a corner.",
+            Tool::Plant(_) => "Click where it grows.",
             Tool::Calibrate => "Drag a line along something on the image whose real length you know, then type that length.",
         }
     }
@@ -590,6 +594,8 @@ impl State {
             Pick::Furniture(id) => p.levels.iter().any(|l| l.furniture.iter().any(|r| r.id == id)),
             Pick::Roof(id) => p.roofs.iter().any(|r| r.id == id),
             Pick::Patch(id) => p.site.patches.iter().any(|r| r.id == id),
+            Pick::Barrier(id) => p.site.barriers.iter().any(|r| r.id == id),
+            Pick::Plant(id) => p.site.plants.iter().any(|r| r.id == id),
         }
     }
 
@@ -601,7 +607,7 @@ impl State {
             Pick::Stair(id) => l.stairs.iter().any(|r| r.id == id),
             Pick::Fixture(id) => l.fixtures.iter().any(|r| r.id == id),
             Pick::Furniture(id) => l.furniture.iter().any(|r| r.id == id),
-            Pick::Roof(_) | Pick::Patch(_) => false,
+            Pick::Roof(_) | Pick::Patch(_) | Pick::Barrier(_) | Pick::Plant(_) => false,
         }).map(|l| l.id)
     }
 
@@ -665,12 +671,14 @@ impl State {
                         l.fixtures.iter_mut().for_each(|f| f.controls.retain(|c| *c != id));
                     }
                     Pick::Furniture(id) => l.furniture.retain(|r| r.id != id),
-                    Pick::Roof(_) | Pick::Patch(_) => {}
+                    Pick::Roof(_) | Pick::Patch(_) | Pick::Barrier(_) | Pick::Plant(_) => {}
                 }
             }
             match pick {
                 Pick::Roof(id) => p.roofs.retain(|r| r.id != id),
                 Pick::Patch(id) => p.site.patches.retain(|r| r.id != id),
+                Pick::Barrier(id) => p.site.barriers.retain(|r| r.id != id),
+                Pick::Plant(id) => p.site.plants.retain(|r| r.id != id),
                 _ => {}
             }
         });
@@ -944,6 +952,16 @@ pub fn translate(project: &mut Project, before: &Project, pick: Pick, d: P2) {
         Pick::Patch(id) => {
             if let (Some(r), Some(o)) = (project.site.patches.iter_mut().find(|r| r.id == id), before.site.patches.iter().find(|r| r.id == id)) {
                 r.outline = o.outline.iter().map(|p| mv(*p)).collect();
+            }
+        }
+        Pick::Barrier(id) => {
+            if let (Some(r), Some(o)) = (project.barrier_mut(id), before.barrier(id)) {
+                r.path = o.path.iter().map(|p| mv(*p)).collect();
+            }
+        }
+        Pick::Plant(id) => {
+            if let (Some(r), Some(o)) = (project.plant_mut(id), before.plant(id)) {
+                r.at = mv(o.at);
             }
         }
         _ => {}

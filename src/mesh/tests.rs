@@ -49,7 +49,7 @@ fn house() -> Project {
         Opening { id: 44, at: 4.2, width: 0.5, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Tilt, inside: WallSide::Left, open: 0.5, panels: 1, finish: Finish::paint(0xcccccc) }) },
     ];
     level.walls = vec![south, east, north, west, nib];
-    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
+    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, balustrade: None, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![
         Stair { id: 60, at: [1.0, 1.0], direction: 0.0, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: true, railing: Railing::Both },
         Stair { id: 61, at: [1.0, 3.0], direction: 0.3, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: false, railing: Railing::Left },
@@ -83,7 +83,7 @@ fn house() -> Project {
 
     let mut upper = Level::new(2, "Upper", 2.9, 2.4);
     upper.walls = vec![wall(70, [0.0, 0.0], [6.0, 0.0])];
-    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
+    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, balustrade: None, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
 
     let roof = |id: Id, shape: RoofShape, center: P2| Roof { id, name: "Roof".into(), shape, center, size: [7.0, 4.5], turn: 0.2, base: 5.3, pitch: 0.5, overhang: 0.4, thickness: 0.2, finish: Finish::of("shingle"), gable: Finish::of("siding"), visible: true };
     Project {
@@ -95,6 +95,8 @@ fn house() -> Project {
             geo: None,
             north: 0.0,
             sun: SunSetting::default(),
+            barriers: vec![],
+            plants: vec![],
         },
         levels: vec![level, upper],
         roofs: vec![roof(90, RoofShape::Gable, [3.0, 2.0]), roof(91, RoofShape::Hip, [3.0, 2.0]), roof(92, RoofShape::Shed, [3.0, 2.0]), roof(93, RoofShape::Flat, [3.0, 2.0]), Roof { size: [3.0, 6.0], ..roof(94, RoofShape::Hip, [3.0, 2.0]) }],
@@ -242,7 +244,7 @@ fn an_empty_project_builds_to_nothing() {
     let project = Project {
         name: String::new(),
         units: Units::Metric,
-        site: Site { terrain: Terrain { origin: [0.0, 0.0], spacing: 1.0, cols: 0, rows: 0, heights: vec![], finish: Finish::of("grass"), source: String::new() }, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
+        site: Site { terrain: Terrain { origin: [0.0, 0.0], spacing: 1.0, cols: 0, rows: 0, heights: vec![], finish: Finish::of("grass"), source: String::new() }, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default(), barriers: vec![], plants: vec![] },
         levels: vec![],
         roofs: vec![],
         materials: vec![],
@@ -258,7 +260,7 @@ fn an_empty_project_builds_to_nothing() {
     let mut project = project;
     let mut level = Level::new(1, "L", 0.0, 2.4);
     level.walls = vec![wall(1, [1.0, 1.0], [1.0, 1.0])];
-    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
+    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, balustrade: None, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![Stair { id: 3, at: [0.0, 0.0], direction: 0.0, width: 1.0, run: 0.0, rise: 3.0, steps: 0, tread: Finish::of("oak"), closed: true, railing: Railing::Both }];
     project.levels = vec![level];
     assert!(build(&project, &BuildOptions::default()).vertices.is_empty());
@@ -460,4 +462,58 @@ fn a_beam_hangs_from_the_ceiling_wherever_that_is() {
     let pick = pick_of(&scene, Pick::Furniture(900));
     let (lo, hi) = scene.vertices.iter().filter(|v| v.pick == pick).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v.pos[2]), hi.max(v.pos[2])));
     assert!((hi - ceiling).abs() < 0.02 && (hi - lo - 0.24).abs() < 0.01, "{lo}..{hi} under a ceiling at {ceiling}");
+}
+
+#[test]
+fn a_fence_follows_the_ground_a_retaining_wall_has_a_level_top_and_a_tree_stands_on_the_ground() {
+    use crate::model::{BarrierKind, PlantKind};
+    let mut project = house();
+    let ground = |p: [f32; 2]| project.site.terrain.height(p);
+    // A line running down the slope, clear of the building.
+    let (a, b) = ([-8.0, -8.0], [-8.0, 8.0]);
+    assert!((ground(a) - ground(b)).abs() > 1.0, "the test site slopes along this line");
+    project.site.barriers.push(BarrierKind::Fence.new(700, vec![a, b]));
+    project.site.barriers.push(BarrierKind::Retaining.new(701, vec![[-9.0, -8.0], [-9.0, 8.0]]));
+    project.site.plants.push(PlantKind::Tree.new(702, [-6.0, 0.0]));
+    let scene = build(&project, &BuildOptions::default());
+    let of = |pick: Pick| -> Vec<[f32; 3]> { let id = pick_of(&scene, pick); scene.vertices.iter().filter(|v| v.pick == id).map(|v| v.pos).collect() };
+
+    // The fence's top is 1.8 m over the ground at each end.
+    let fence = of(Pick::Barrier(700));
+    let top_near = |y: f32| fence.iter().filter(|p| (p[1] - y).abs() < 0.2).map(|p| p[2]).fold(f32::MIN, f32::max);
+    assert!((top_near(a[1]) - (ground(a) + 1.86)).abs() < 0.08, "{} vs ground {}", top_near(a[1]), ground(a));
+    assert!((top_near(b[1]) - (ground(b) + 1.86)).abs() < 0.08, "{} vs ground {}", top_near(b[1]), ground(b));
+
+    // The retaining wall's top is one height all along, 0.9 m over the highest ground.
+    let wall = of(Pick::Barrier(701));
+    let top = wall.iter().map(|p| p[2]).fold(f32::MIN, f32::max);
+    let high = ground([-9.0, -8.0]).max(ground([-9.0, 8.0]));
+    assert!((top - (high + 0.9)).abs() < 0.05, "{top} vs {high}");
+    assert!(wall.iter().filter(|p| p[2] > top - 1e-3).count() >= 8, "level along its length");
+
+    // The tree: foot on the ground, 6 m tall, 4.5 m across.
+    let tree = of(Pick::Plant(702));
+    let (lo, hi) = tree.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p[2]), hi.max(p[2])));
+    assert!((lo - ground([-6.0, 0.0])).abs() < 0.05 && (hi - lo - 6.0).abs() < 0.05, "{lo}..{hi}");
+    let wide = tree.iter().map(|p| (p[0] + 6.0).abs()).fold(0.0, f32::max);
+    assert!((wide - 2.25).abs() < 0.15, "{wide}");
+}
+
+#[test]
+fn a_raised_deck_gets_posts_to_the_ground_and_a_balustrade_on_its_open_edges() {
+    let project = crate::sample::house();
+    let main = project.levels.last().unwrap();
+    let deck = main.rooms.iter().find(|r| r.name == "Deck").unwrap();
+    let scene = build(&project, &BuildOptions::default());
+    let pick = pick_of(&scene, Pick::Room(deck.id));
+    let floor = main.elevation + deck.floor_offset;
+    let pts: Vec<[f32; 3]> = scene.vertices.iter().filter(|v| v.pick == pick).map(|v| v.pos).collect();
+    // Posts reach well below the deck, toward ground nearly a storey down.
+    let lowest = pts.iter().map(|p| p[2]).fold(f32::MAX, f32::min);
+    assert!(lowest < floor - 2.0, "{lowest}");
+    // The balustrade's rail is a metre over the deck, and none of it is along the house wall.
+    let rail: Vec<&[f32; 3]> = pts.iter().filter(|p| (p[2] - (floor + 1.0)).abs() < 1e-3).collect();
+    assert!(!rail.is_empty());
+    // Near the house there are only the ends of the two side rails, not a run along the wall.
+    assert!(rail.iter().filter(|p| p[1] < 11.3).all(|p| (p[0] - 8.6).abs() < 0.3 || (p[0] - 15.0).abs() < 0.3), "a balustrade runs along the house wall");
 }

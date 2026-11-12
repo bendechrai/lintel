@@ -40,6 +40,9 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
   controls: flick it and they go on or off. The sun is set by hand, or follows the site's
   latitude and longitude, the date and the time, down to night.
 - **Furniture and appliances**: a starter catalogue of 43 resizable pieces.
+- **Outside**: fences and gates that follow the ground, retaining walls, glass balustrades,
+  trees and shrubs (which shade the light calculation), and raised decks that get posts down
+  to the ground. Outdoor steps are a stair on the lower level.
 - **Ground**: a height grid you can shape as a plane, or fetch from a public elevation
   service by latitude and longitude, plus draped surfaces (driveway, paths, patio).
 - **Materials**: about 55 procedural surfaces. Paints take any colour, timbers keep their own

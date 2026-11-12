@@ -83,6 +83,19 @@ pub fn hit(s: &State, p: P2, slop: f32) -> Option<Pick> {
             }
         }
     }
+    if s.show_site {
+        for b in &s.project.site.barriers {
+            if b.path.windows(2).any(|w| geom::segment_distance(p, w[0], w[1]) < b.thickness / 2.0 + slop) {
+                return Some(Pick::Barrier(b.id));
+            }
+        }
+        // A tree is picked by its trunk, so what stands under its canopy can still be reached.
+        for t in &s.project.site.plants {
+            if geom::dist(p, t.at) < (t.spread * 0.18).max(slop * 1.5) {
+                return Some(Pick::Plant(t.id));
+            }
+        }
+    }
     if let Some(r) = level.rooms.iter().rev().find(|r| geom::inside(p, &r.outline)) {
         return Some(Pick::Room(r.id));
     }
@@ -127,6 +140,10 @@ fn hit_handle(s: &State, p: P2, slop: f32) -> Option<DragOp> {
             let r = s.project.site.patches.iter().find(|r| r.id == id)?;
             r.outline.iter().position(|v| geom::dist(p, *v) < slop).map(|index| DragOp::Vertex { pick, index })
         }
+        pick @ Pick::Barrier(id) => {
+            let r = s.project.barrier(id)?;
+            r.path.iter().position(|v| geom::dist(p, *v) < slop).map(|index| DragOp::Vertex { pick, index })
+        }
         _ => None,
     }
 }
@@ -135,6 +152,7 @@ fn outline_mut(project: &mut Project, pick: Pick) -> Option<&mut Vec<P2>> {
     match pick {
         Pick::Room(id) => project.levels.iter_mut().flat_map(|l| &mut l.rooms).find(|r| r.id == id).map(|r| &mut r.outline),
         Pick::Patch(id) => project.site.patches.iter_mut().find(|r| r.id == id).map(|r| &mut r.outline),
+        Pick::Barrier(id) => project.barrier_mut(id).map(|r| &mut r.path),
         _ => None,
     }
 }
@@ -276,6 +294,15 @@ fn place(s: &mut State, p: P2) {
             // Stay in the tool: fixtures usually go in several at a time.
             s.selected = Some(Pick::Fixture(id));
         }
+        Tool::Plant(kind) => {
+            s.checkpoint("");
+            let id = s.project.id();
+            s.project.site.plants.push(kind.new(id, p));
+            s.show_site = true;
+            s.touch();
+            // Stay in the tool: planting usually goes several at a time.
+            s.selected = Some(Pick::Plant(id));
+        }
         Tool::Furniture(key) => {
             s.checkpoint("");
             let id = s.project.id();
@@ -321,7 +348,7 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             let id = s.project.id();
             if let Some(l) = level_mut(s) {
                 let name = format!("Room {}", l.rooms.len() + 1);
-                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None });
+                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, balustrade: None, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None });
             }
             s.touch();
             s.tool = Tool::Select;
@@ -342,6 +369,15 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             s.touch();
             s.tool = Tool::Select;
             s.select(Some(Pick::Stair(id)));
+        }
+        Tool::Barrier(kind) if geom::dist(a, b) > 0.2 => {
+            s.checkpoint("");
+            let id = s.project.id();
+            s.project.site.barriers.push(kind.new(id, vec![a, b]));
+            s.show_site = true;
+            s.touch();
+            s.tool = Tool::Select;
+            s.select(Some(Pick::Barrier(id)));
         }
         Tool::Patch if big => {
             s.checkpoint("");
@@ -445,12 +481,13 @@ pub fn plan_drag(s: &mut State, d: &mut Drag, tx: &mut Tx) {
                     }
                     // A double click on the edge of the selected outline adds a corner there.
                     if d.clicks == 2 {
-                        if let Some(pick @ (Pick::Room(_) | Pick::Patch(_))) = s.selected {
+                        if let Some(pick @ (Pick::Room(_) | Pick::Patch(_) | Pick::Barrier(_))) = s.selected {
                             s.checkpoint("");
                             let at = geom::snap2(raw, step);
                             if let Some(outline) = outline_mut(&mut s.project, pick) {
                                 let n = outline.len();
-                                let edge = (0..n).min_by(|a, b| {
+                                let edges = if matches!(pick, Pick::Barrier(_)) { n.saturating_sub(1) } else { n };
+                                let edge = (0..edges).min_by(|a, b| {
                                     let da = geom::segment_distance(raw, outline[*a], outline[(*a + 1) % n]);
                                     let db = geom::segment_distance(raw, outline[*b], outline[(*b + 1) % n]);
                                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
@@ -493,7 +530,7 @@ pub fn plan_drag(s: &mut State, d: &mut Drag, tx: &mut Tx) {
                     }
                 }
                 Tool::Calibrate => s.drag = DragOp::Draw { a: raw, b: raw },
-                Tool::Wall | Tool::Room | Tool::Stair | Tool::Patch | Tool::Roof => {
+                Tool::Wall | Tool::Room | Tool::Stair | Tool::Patch | Tool::Roof | Tool::Barrier(_) => {
                     let a = snap_point(s, raw, &[]);
                     s.drag = DragOp::Draw { a, b: a };
                 }

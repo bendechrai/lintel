@@ -367,7 +367,16 @@ fn toolbox(s: &State, th: &Th) -> El {
     for (i, (name, kind)) in fixtures.iter().enumerate() {
         list = list.child(tool_row(s, th, format!("tool-fixture-{i}"), name, Tool::Fixture(*kind), ""));
     }
-    list = list.child(section(th, "Outside")).child(t("patch", "Ground surface", Tool::Patch, ""));
+    list = list
+        .child(section(th, "Outside"))
+        .child(t("patch", "Ground surface", Tool::Patch, ""))
+        .child(t("fence", "Fence", Tool::Barrier(BarrierKind::Fence), ""))
+        .child(t("gate", "Gate", Tool::Barrier(BarrierKind::Gate), ""))
+        .child(t("retaining", "Retaining wall", Tool::Barrier(BarrierKind::Retaining), ""))
+        .child(t("balustrade", "Balustrade", Tool::Barrier(BarrierKind::Balustrade), ""))
+        .child(t("tree", "Tree", Tool::Plant(PlantKind::Tree), ""))
+        .child(t("conifer", "Conifer", Tool::Plant(PlantKind::Conifer), ""))
+        .child(t("shrub", "Shrub", Tool::Plant(PlantKind::Shrub), ""));
 
     list = list.child(section(th, "Furniture & appliances"));
     let pieces = catalog::catalog();

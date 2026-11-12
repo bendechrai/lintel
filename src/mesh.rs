@@ -3,6 +3,7 @@
 mod fixtures;
 mod geom;
 mod openings;
+mod outside;
 mod roofs;
 mod rooms;
 mod terrain;
@@ -86,6 +87,7 @@ pub fn build(project: &Project, options: &BuildOptions) -> Scene {
     if options.terrain {
         let ground = Ground::new(project);
         terrain::build(&mut cx, project, &ground);
+        outside::build(&mut cx, project, &ground, &|i| !top.is_some_and(|t| i > t));
     }
 
     if building > 0 {

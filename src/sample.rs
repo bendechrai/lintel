@@ -37,7 +37,7 @@ impl B {
     }
 
     fn room(&mut self, name: &str, outline: &[P2], floor: Finish) -> Room {
-        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }
+        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, balustrade: None, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }
     }
 
     fn fixture(&mut self, kind: FixtureKind, mount: Mount) -> Fixture {
@@ -89,7 +89,7 @@ pub fn house() -> Project {
         p: Project {
             name: "Sample house".into(),
             units: Units::Metric,
-            site: Site { terrain, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
+            site: Site { terrain, patches: vec![], geo: None, north: 0.0, sun: SunSetting::default(), barriers: vec![], plants: vec![] },
             levels: vec![],
             roofs: vec![],
             materials: vec![],
@@ -146,6 +146,20 @@ pub fn house() -> Project {
         tread: Finish::of("oak"),
         closed: true,
         railing: Railing::Left,
+    });
+
+    // Steps from the patio up to the deck.
+    lower.stairs.push(Stair {
+        id: b.p.id(),
+        at: [9.3, 17.7],
+        direction: -FRAC_PI_2,
+        width: 1.1,
+        run: 3.5,
+        rise: 2.87,
+        steps: 16,
+        tread: Finish::of("decking"),
+        closed: false,
+        railing: Railing::Both,
     });
 
     for (key, at, turn) in [
@@ -263,6 +277,7 @@ pub fn house() -> Project {
     let mut deck = b.room("Deck", &rect(8.6, 11.0, 15.0, 14.2), Finish::of("decking"));
     deck.has_ceiling = false;
     deck.floor_offset = -0.03;
+    deck.balustrade = Some(1.0);
     main.rooms.push(deck);
     // Skirting and cornices in the finished rooms.
     for room in main.rooms.iter_mut().filter(|r| ["Entry hall", "Living room", "Kitchen & dining", "Pantry"].contains(&r.name.as_str())) {
@@ -435,6 +450,29 @@ pub fn house() -> Project {
         let id = b.p.id();
         b.p.site.patches.push(Patch { id, name: name.into(), outline, finish });
     }
+    // A fence round the back garden with a gate across the side path, a low retaining wall
+    // where the ground drops beside the house, and some planting.
+    for (kind, path) in [
+        (BarrierKind::Fence, vec![[16.3, 0.5], [22.5, 0.5], [22.5, 26.0], [-7.5, 26.0], [-7.5, 3.0], [-0.1, 3.0]]),
+        (BarrierKind::Gate, vec![[15.25, 0.5], [16.3, 0.5]]),
+        (BarrierKind::Retaining, vec![[-1.2, 5.5], [-1.2, 12.5]]),
+    ] {
+        let id = b.p.id();
+        b.p.site.barriers.push(kind.new(id, path));
+    }
+    for (kind, at) in [
+        (PlantKind::Tree, [-4.5, -5.0]),
+        (PlantKind::Tree, [19.5, -4.5]),
+        (PlantKind::Tree, [18.5, 20.5]),
+        (PlantKind::Conifer, [-4.5, 21.0]),
+        (PlantKind::Conifer, [-2.0, 23.0]),
+        (PlantKind::Shrub, [9.6, -0.75]),
+        (PlantKind::Shrub, [11.7, -0.75]),
+        (PlantKind::Shrub, [13.8, -0.75]),
+    ] {
+        let id = b.p.id();
+        b.p.site.plants.push(kind.new(id, at));
+    }
     let _ = render;
     b.p
 }
@@ -444,7 +482,7 @@ pub fn blank() -> Project {
     let mut p = Project {
         name: "Untitled".into(),
         units: Units::Metric,
-        site: Site { terrain: Terrain::flat([-15.0, -15.0], [30.0, 30.0], 1.0), patches: vec![], geo: None, north: 0.0, sun: SunSetting::default() },
+        site: Site { terrain: Terrain::flat([-15.0, -15.0], [30.0, 30.0], 1.0), patches: vec![], geo: None, north: 0.0, sun: SunSetting::default(), barriers: vec![], plants: vec![] },
         levels: vec![],
         roofs: vec![],
         materials: vec![],

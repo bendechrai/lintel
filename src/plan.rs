@@ -568,7 +568,7 @@ fn draw_tool_preview(d: &mut Draw, s: &State, level: &Level) {
                 d.line(a, b, (s.wall_thickness() * d.cam.zoom).max(2.0), ink.accent.alpha(0.5));
                 d.label(add(scale(add(a, b), 0.5), [0.0, d.px(16.0)]), units::length(geom::dist(a, b), d.units), SMALL, ink.accent);
             }
-            Tool::Stair | Tool::Calibrate => {
+            Tool::Stair | Tool::Calibrate | Tool::Barrier(_) => {
                 d.line(a, b, 2.0, ink.accent);
                 d.label(add(scale(add(a, b), 0.5), [0.0, d.px(14.0)]), units::length(geom::dist(a, b), d.units), SMALL, ink.accent);
             }
@@ -628,6 +628,44 @@ fn draw(s: &State, size: [f32; 2]) -> (Shape, Vec<Label>) {
             }
         }
         draw_contours(&mut d, t, 0.5);
+        for b in &s.project.site.barriers {
+            let selected = s.selected == Some(Pick::Barrier(b.id));
+            let color = if selected { ink.accent } else { ink.line };
+            let width = match b.kind {
+                BarrierKind::Retaining => (b.thickness * d.cam.zoom).max(3.0),
+                BarrierKind::Gate => 3.0,
+                _ => 1.75,
+            };
+            for w in b.path.windows(2) {
+                match b.kind {
+                    BarrierKind::Balustrade => d.dashed(w[0], w[1], width, color),
+                    _ => d.line(w[0], w[1], width, if b.kind == BarrierKind::Retaining && !selected { ink.faint } else { color }),
+                }
+                // Posts as ticks along a fence.
+                if b.kind == BarrierKind::Fence {
+                    let len = geom::dist(w[0], w[1]);
+                    let n = (len / 2.4).ceil().max(1.0) as usize;
+                    for i in 0..=n {
+                        let p = add(w[0], scale(sub(w[1], w[0]), i as f32 / n as f32));
+                        d.dot(p, 2.5, color, None);
+                    }
+                }
+            }
+            if selected {
+                for p in &b.path {
+                    handle(&mut d, *p);
+                }
+                if let (Some(a), Some(z)) = (b.path.first(), b.path.last()) {
+                    d.label(add(scale(add(*a, *z), 0.5), [0.0, d.px(14.0)]), units::length(b.length(), d.units), SMALL, ink.accent);
+                }
+            }
+        }
+        for t in &s.project.site.plants {
+            let selected = s.selected == Some(Pick::Plant(t.id));
+            let green = hex(0x4f8a3a);
+            d.dot(t.at, t.spread / 2.0 * d.cam.zoom, green.alpha(0.16), Some(if selected { ink.accent } else { green.alpha(0.7) }));
+            d.dot(t.at, 3.0, if selected { ink.accent } else { green }, None);
+        }
     }
 
     let Some(level) = s.active() else { return (d.shape, d.labels) };

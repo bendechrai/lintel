@@ -423,3 +423,33 @@ fn a_walls_build_up_sets_its_thickness_and_can_be_edited_layer_by_layer() {
     let caps = scene.vertices.iter().filter(|v| (v.pos[2] - top).abs() < 1e-4 && v.normal[2] > 0.9).count();
     assert_eq!(caps, 3 * 4, "three strips of four corners");
 }
+
+#[test]
+fn drawing_a_fence_and_planting_a_tree() {
+    let mut rt = app(sample::blank());
+    // (The outside tools are below the fold of the tool panel; choose them as the buttons do.)
+    rt.update(|s, _| s.set_tool(Tool::Barrier(BarrierKind::Fence)));
+    settle(&mut rt);
+    let (a, b) = (on_plan(&rt, [-3.0, -2.0]), on_plan(&rt, [3.0, -2.0]));
+    drag(&mut rt, a, b);
+    let fence = rt.state.project.site.barriers[0].clone();
+    assert_eq!((fence.kind, fence.path.clone()), (BarrierKind::Fence, vec![[-3.0, -2.0], [3.0, -2.0]]));
+    assert_eq!(rt.state.selected, Some(Pick::Barrier(fence.id)));
+    // Drag its end; the other stays.
+    let (from, to) = (on_plan(&rt, [3.0, -2.0]), on_plan(&rt, [3.0, 1.0]));
+    drag(&mut rt, from, to);
+    assert_eq!(rt.state.project.barrier(fence.id).unwrap().path, vec![[-3.0, -2.0], [3.0, 1.0]]);
+
+    rt.update(|s, _| s.set_tool(Tool::Plant(PlantKind::Tree)));
+    settle(&mut rt);
+    let at = on_plan(&rt, [0.0, 2.5]);
+    click(&mut rt, at);
+    let tree = rt.state.project.site.plants[0];
+    assert!((tree.at[0]).abs() < 0.05 && (tree.at[1] - 2.5).abs() < 0.05);
+    // Delete the tree; the fence remains.
+    rt.update(|s, _| {
+        s.select(Some(Pick::Plant(tree.id)));
+        s.delete_selected();
+    });
+    assert!(rt.state.project.site.plants.is_empty() && rt.state.project.site.barriers.len() == 1);
+}

@@ -158,6 +158,107 @@ pub struct Site {
     pub north: f32,
     #[serde(default)]
     pub sun: SunSetting,
+    /// Fences, gates, retaining walls and balustrades.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barriers: Vec<Barrier>,
+    /// Trees and shrubs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plants: Vec<Plant>,
+}
+
+/// Something that runs along a line outside: a fence, a gate in one, a retaining wall, a
+/// balustrade.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Barrier {
+    pub id: Id,
+    pub name: String,
+    pub kind: BarrierKind,
+    /// The line it follows, corner to corner.
+    pub path: Vec<P2>,
+    pub height: f32,
+    pub thickness: f32,
+    pub finish: Finish,
+    /// The height its foot stands at above the site datum; `None` follows the ground.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BarrierKind {
+    Fence,
+    Gate,
+    /// A thick wall holding back higher ground, with a level top.
+    Retaining,
+    /// Posts, a handrail and glass between: round a deck or a drop.
+    Balustrade,
+}
+
+impl BarrierKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            BarrierKind::Fence => "Fence",
+            BarrierKind::Gate => "Gate",
+            BarrierKind::Retaining => "Retaining wall",
+            BarrierKind::Balustrade => "Balustrade",
+        }
+    }
+
+    /// A new one of this kind along `path`.
+    pub fn new(self, id: Id, path: Vec<P2>) -> Barrier {
+        let (height, thickness, finish) = match self {
+            BarrierKind::Fence => (1.8, 0.02, Finish::of("cedar_siding")),
+            BarrierKind::Gate => (1.8, 0.04, Finish::of("cedar")),
+            BarrierKind::Retaining => (0.9, 0.3, Finish::of("blockwork")),
+            BarrierKind::Balustrade => (1.0, 0.04, Finish::colored("aluminium", rgb(0x2f3134))),
+        };
+        Barrier { id, name: self.name().into(), kind: self, path, height, thickness, finish, base: None }
+    }
+}
+
+impl Barrier {
+    pub fn length(&self) -> f32 {
+        self.path.windows(2).map(|w| ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt()).sum()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Plant {
+    pub id: Id,
+    pub kind: PlantKind,
+    pub at: P2,
+    pub height: f32,
+    /// Width of the canopy.
+    pub spread: f32,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PlantKind {
+    /// A round-headed tree on a clear trunk.
+    Tree,
+    /// A cone-shaped evergreen.
+    Conifer,
+    Shrub,
+}
+
+impl PlantKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            PlantKind::Tree => "Tree",
+            PlantKind::Conifer => "Conifer",
+            PlantKind::Shrub => "Shrub",
+        }
+    }
+
+    pub fn new(self, id: Id, at: P2) -> Plant {
+        let (height, spread) = match self {
+            PlantKind::Tree => (6.0, 4.5),
+            PlantKind::Conifer => (7.0, 2.6),
+            PlantKind::Shrub => (1.2, 1.4),
+        };
+        Plant { id, kind: self, at, height, spread }
+    }
 }
 
 /// Where the sun is: set by hand, or worked out from the site's location and a date and time.
@@ -710,6 +811,9 @@ pub struct Room {
     /// False for a deck, a porch or a carport: a floor with nothing over it.
     #[serde(default = "yes")]
     pub has_ceiling: bool,
+    /// A balustrade this high along every edge that has no wall: for a deck or a landing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balustrade: Option<f32>,
     /// How the ceiling rises above `ceiling_height`, which is then its lowest edge.
     #[serde(default)]
     pub ceiling_shape: CeilingShape,
@@ -1061,6 +1165,8 @@ pub enum Pick {
     Furniture(Id),
     Roof(Id),
     Patch(Id),
+    Barrier(Id),
+    Plant(Id),
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1129,5 +1235,21 @@ impl Project {
 
     pub fn patch(&self, id: Id) -> Option<&Patch> {
         self.site.patches.iter().find(|r| r.id == id)
+    }
+
+    pub fn barrier_mut(&mut self, id: Id) -> Option<&mut Barrier> {
+        self.site.barriers.iter_mut().find(|r| r.id == id)
+    }
+
+    pub fn barrier(&self, id: Id) -> Option<&Barrier> {
+        self.site.barriers.iter().find(|r| r.id == id)
+    }
+
+    pub fn plant_mut(&mut self, id: Id) -> Option<&mut Plant> {
+        self.site.plants.iter_mut().find(|r| r.id == id)
+    }
+
+    pub fn plant(&self, id: Id) -> Option<&Plant> {
+        self.site.plants.iter().find(|r| r.id == id)
     }
 }

@@ -465,6 +465,21 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
             }
         })),
     ];
+    if !r.has_ceiling {
+        v.push(toggle(th, "Balustrade", "room-balustrade", r.balustrade.is_some(), on_project("", move |p: &mut Project, on: bool| {
+            if let Some(r) = p.room_mut(id) {
+                r.balustrade = on.then_some(1.0)
+            }
+        })));
+        if let Some(h) = r.balustrade {
+            v.push(len(s, th, "Rail height", "room-balustrade-height", h, move |p, x| {
+                if let Some(r) = p.room_mut(id) {
+                    r.balustrade = Some(x.clamp(0.3, 2.0))
+                }
+            }));
+        }
+        v.push(text("A floor with nothing over it gets posts down to the ground wherever it stands clear of it, and a balustrade along the edges that have no wall.").font(SMALL).color(th.dim).wrap());
+    }
     if r.has_ceiling {
         v.push(len(s, th, "Ceiling height", "room-height", r.ceiling_height.unwrap_or(level.height), move |p, x| {
             if let Some(r) = p.room_mut(id) {
@@ -1033,6 +1048,96 @@ fn option_rows(s: &State, th: &Th) -> Vec<El> {
     v
 }
 
+fn barrier(s: &State, th: &Th, lib: &Library, b: &Barrier) -> Vec<El> {
+    let id = b.id;
+    let kinds = [("Fence", BarrierKind::Fence), ("Gate", BarrierKind::Gate), ("Retaining wall", BarrierKind::Retaining), ("Balustrade", BarrierKind::Balustrade)];
+    let ground = s.project.site.terrain.height(b.path.first().copied().unwrap_or([0.0, 0.0]));
+    let mut v = vec![
+        heading(th, b.kind.name(), format!("{} long", units::length(b.length(), s.project.units))),
+        name(s, th, "Name", "barrier-name", &b.name, on_project("", move |p: &mut Project, t: String| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.name = t
+            }
+        })),
+        choice(th, "Kind", "barrier-kind", &b.kind, &kinds, on_project("", move |p: &mut Project, k: BarrierKind| {
+            if let Some(b) = p.barrier_mut(id) {
+                // Take on the new kind's usual size and finish, keeping the line.
+                let fresh = k.new(id, std::mem::take(&mut b.path));
+                *b = Barrier { name: if b.name == b.kind.name() { fresh.name.clone() } else { b.name.clone() }, base: b.base, ..fresh };
+            }
+        })),
+        len(s, th, "Height", "barrier-height", b.height, move |p, x| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.height = x.clamp(0.05, 10.0)
+            }
+        }),
+        len(s, th, "Thickness", "barrier-thickness", b.thickness, move |p, x| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.thickness = x.clamp(0.005, 2.0)
+            }
+        }),
+        fin(s, th, lib, "Finish", "barrier-finish", &b.finish, move |p, f| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.finish = f
+            }
+        }),
+        toggle(th, "Follows the ground", "barrier-ground", b.base.is_none(), on_project("", move |p: &mut Project, on: bool| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.base = if on { None } else { Some(ground) }
+            }
+        })),
+    ];
+    if let Some(base) = b.base {
+        v.push(len(s, th, "Stands at", "barrier-base", base, move |p, x| {
+            if let Some(b) = p.barrier_mut(id) {
+                b.base = Some(x)
+            }
+        }));
+    }
+    v.push(text(match b.kind {
+        BarrierKind::Retaining => "Its top is level, set by the highest ground along it. It doesn't reshape the ground: set the ground's heights to match.",
+        BarrierKind::Balustrade => "Posts, a handrail and glass. On a deck, set where it stands to the deck's floor height, or give the deck's room a balustrade.",
+        _ => "Drag its ends to move them. Double-click it to add a corner.",
+    }).font(SMALL).color(th.dim).wrap().mt(8.0));
+    v.push(actions(th, false, false));
+    v
+}
+
+fn plant(s: &State, th: &Th, t: &Plant) -> Vec<El> {
+    let id = t.id;
+    let kinds = [("Tree", PlantKind::Tree), ("Conifer", PlantKind::Conifer), ("Shrub", PlantKind::Shrub)];
+    vec![
+        heading(th, t.kind.name(), "It shades the house in the light calculation"),
+        choice(th, "Kind", "plant-kind", &t.kind, &kinds, on_project("", move |p: &mut Project, k: PlantKind| {
+            if let Some(t) = p.plant_mut(id) {
+                let fresh = k.new(id, t.at);
+                *t = fresh
+            }
+        })),
+        len(s, th, "Height", "plant-height", t.height, move |p, x| {
+            if let Some(t) = p.plant_mut(id) {
+                t.height = x.clamp(0.2, 60.0)
+            }
+        }),
+        len(s, th, "Spread", "plant-spread", t.spread, move |p, x| {
+            if let Some(t) = p.plant_mut(id) {
+                t.spread = x.clamp(0.2, 40.0)
+            }
+        }),
+        len(s, th, "X", "plant-x", t.at[0], move |p, x| {
+            if let Some(t) = p.plant_mut(id) {
+                t.at[0] = x
+            }
+        }),
+        len(s, th, "Y", "plant-y", t.at[1], move |p, x| {
+            if let Some(t) = p.plant_mut(id) {
+                t.at[1] = x
+            }
+        }),
+        actions(th, false, false),
+    ]
+}
+
 fn light_rows(s: &State, th: &Th) -> Vec<El> {
     let lux = &s.lux;
     let busy = lux.request.is_pending();
@@ -1429,6 +1534,8 @@ pub fn view(s: &State, th: &Th) -> El {
         Some(Pick::Furniture(id)) => p.furniture(id).map(|x| furniture(s, th, &lib, x)),
         Some(Pick::Roof(id)) => p.roof(id).map(|x| roof(s, th, &lib, x)),
         Some(Pick::Patch(id)) => p.patch(id).map(|x| patch(s, th, &lib, x)),
+        Some(Pick::Barrier(id)) => p.barrier(id).map(|x| barrier(s, th, &lib, x)),
+        Some(Pick::Plant(id)) => p.plant(id).map(|x| plant(s, th, x)),
         None => None,
     }
     .unwrap_or_else(|| project_panel(s, th, &lib));
