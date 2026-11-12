@@ -1,76 +1,62 @@
-# Open questions
+# Questions and decisions
 
-Things I'd like your answer on. Each has the default I'm working to until you say otherwise.
-Answered ones move to the bottom with the decision.
+Open questions first, each with the default I'm working to until you say otherwise. Decisions
+are below, with what they turn into.
 
-## Direction
+## Open
 
-1. **Where does it run?** Native desktop only, or in a browser too?
-   Default: native desktop. This decides how much Rune's experimental web target matters.
-2. **How real should the render be?** A live view that looks good, or also a slow,
-   high-quality still (bounced light, soft shadows)?
-   Default: live view only.
-3. **How do measurements get in?** Typed from a tape measure, traced over a floor plan image,
-   or imported from a phone room scan?
-   Default: typed and drawn by hand.
-4. **What is the first real job?** Which change to your own home do you want to plan first?
-   It decides what gets depth first (lighting, layout, finishes, electrical).
+1. **Time zones.** The sun's clock is a UTC offset you set. Should it work out the time zone
+   and daylight saving from the location instead? Default: leave it as an offset.
+2. **Roof.** Does your roof have valleys, dormers or several ridges? Today a roof is one
+   rectangle (gable, hip, shed or flat). Default: add roofs made of several rectangles later.
+3. **Services.** Do you want plumbing points and HVAC duct runs? Default: no.
+4. **Voice agent scope.** It will use each person's own API key. Should it only fill in the
+   model as you dictate measurements, or also answer questions about the house ("how much
+   skirting do I need")? Push-to-talk or always listening? Default: dictation only,
+   push-to-talk.
+5. **Named options.** When you keep "Existing" and a proposal in one project, do they share
+   the site and the unchanged levels, or is each a full copy of the house? Default: each is a
+   full copy you can diverge freely, with a side-by-side view.
+6. **Real products.** Where does the product library live: in the project file, in a library
+   file you keep and share between projects, or a public list people contribute to?
+   Default: a library file of your own, with a few examples included.
+7. **Drawings.** For dimensioned drawings, which paper sizes and scales do you print at
+   (A3 at 1:100, Letter at 1/4" = 1')? Default: A3 and A4 at 1:50 and 1:100, as PDF.
+8. **Licence and name.** MIT and "Lintel" are my placeholders.
 
-## Lighting
+## Decided
 
-5. **Sun.** Built: by hand, or from latitude, longitude, date and time, with shortcuts for
-   the solstices and equinoxes. The clock is a UTC offset you set; should it know time zones
-   and daylight saving from the location instead?
-6. **Lamps.** Which sources matter: bulbs by wattage or lumens, colour temperature, dimming,
-   LED strip by lumens per metre in a diffuser channel? Do you want real photometric numbers
-   (lux on a bench) or only a believable picture?
+| | Decision |
+| --- | --- |
+| Platform | Native desktop app, plus a link anyone can open to view a house on any device. |
+| Shared link | A frozen copy inside the link: no hosting, no account. Send a new link after a change. |
+| Realism | Calculated light levels, not only a believable picture. |
+| Getting measurements in | Typed, and traced over a plan image. Phone scans are parked. |
+| Voice agent | Wanted; uses each person's own API key. |
+| Electrical | Outlet and switch positions on regular walls. A switch knows the lights it controls. |
+| Units | Metric with neutral sizes by default; feet and inches per project. |
+| Stairs | Straight flights are enough. |
+| Before and after | Named options inside one project. |
+| Light levels | Add targets per room, and an overcast sky. |
+| Output | Dimensioned drawings, images, and 3D model export. |
+| Walls | Skirting and cornices, part-height finishes, and the build-up through the wall. |
+| Ceilings | Sloped or vaulted, bulkheads and drops, exposed beams. |
+| Outside | Fences and gates, retaining walls and steps, trees and planting, deck structure. |
+| Furniture | Real products by their true dimensions. |
 
-## Model
+## Built so far from these
 
-8. **Units.** Metric or feet and inches as your default?
-9. **Walls.** Is one finish per face enough, or do you need layers (stud, insulation, plaster),
-   skirting, cornices, half-height tiling?
-10. **Ceilings.** Flat per room is in. Do you need sloped or vaulted ceilings, bulkheads, beams?
-11. **Stairs.** Which shapes does your house have: straight, L, U, winders?
-12. **Roof.** Does yours have valleys, dormers or several ridges?
-13. **Outside.** Fences, retaining walls, steps, decks with posts, trees?
-14. **Services.** Plumbing points, HVAC duct runs?
+Sun by place and time; lamps with lumens and colour temperature; LED strips; switches linked
+to lights; light levels (clear sky); the shared link and phone viewer; tracing a plan image.
 
-## Use
+## To build, in the order I intend
 
-15. **Before and after.** Do you want to keep the existing house and a proposed change side by
-    side (options, phases), or is one model with undo enough?
-16. **Output.** Dimensioned drawings to print or hand to a tradesperson? Material and fixture
-    schedules? Costs?
-17. **Furniture.** Generic resizable pieces, or specific products by real dimensions
-    (your LG fridge and wash tower)? Imported 3D models?
-18. **Licence and name.** MIT and "Lintel" are my placeholders.
-
-## New, from your answers
-
-19. **Shared link.** Built so the house travels inside the link (no upload, no account) and
-    a phone gets a viewer. Anyone with the link sees the whole model and can't change your
-    copy. Is that right, or do you want links that stay current as you edit (which needs
-    somewhere to host the project), comments, or measuring in the viewer?
-20. **Voice agent.** Whose model and key (your own Claude API key in settings)? Should it only
-    fill in the model as you dictate measurements, or also answer questions about the house
-    ("how much skirting do I need")? Push-to-talk or always listening?
-21. **Phone capture.** A companion iOS app (RoomPlan gives walls, doors and windows from
-    LiDAR) is a separate project. Is importing a scan file made by an existing app enough to
-    start with?
-22. **Light accuracy.** Built with what you type per fitting (lumens, colour temperature,
-    source) and a clear-sky sun; it gives a lux map and a figure per room. Do you need
-    manufacturer photometric files (IES) for real beam shapes, overcast skies, or targets per
-    room ("the kitchen bench should reach 500 lux") that the app checks?
-
-## Answered
-
-- **1. Where does it run?** Native desktop app, plus a URL anyone can open to view the model
-  on any device, mobile included.
-- **2. How real?** Accurate light levels, not only a believable picture.
-- **3. Measurements.** All three (typed, traced plan, phone depth scan), plus a built-in voice
-  agent that asks for measurements and takes them as you speak them.
-- **4. First job.** Layout, finishes and electrical. Electrical means outlet and switch
-  positions on regular walls, nothing more for now.
-- **7. Switching.** Yes: a switch knows which lights it controls, so lights can be turned
-  on and off in the view.
+1. Light targets per room and an overcast sky.
+2. Save the view or a lux map as an image; export the house as a 3D model.
+3. Named options in one project, with a side-by-side view.
+4. Skirting, cornices and part-height finishes; then the wall build-up.
+5. Sloped and vaulted ceilings, bulkheads, beams.
+6. Fences, gates, retaining walls, outdoor steps, trees, deck posts and balustrades.
+7. Dimensioned drawings as PDF.
+8. A product library with true dimensions.
+9. The voice agent.
