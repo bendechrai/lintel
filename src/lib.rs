@@ -3,6 +3,7 @@
 pub mod app;
 pub mod camera;
 pub mod catalog;
+pub mod drawing;
 pub mod edit;
 pub mod export;
 pub mod geo;

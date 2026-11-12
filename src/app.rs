@@ -201,6 +201,8 @@ pub struct State {
     pub lux: LuxView,
     /// Another option's walls drawn faintly on the plan for comparison, by its name.
     pub compare: Option<String>,
+    /// The paper and scale drawings are made for.
+    pub sheet: crate::drawing::Sheet,
     /// Where to save a picture of the 3D view, while one is being taken.
     pub capture: Option<PathBuf>,
     /// Draw only the view, with no panels: for pictures of the house.
@@ -278,6 +280,7 @@ impl State {
             linking: None,
             bare: false,
             capture: None,
+            sheet: crate::drawing::Sheet { paper: crate::drawing::Paper::A3, scale: None },
             compare: None,
             images: None,
             underlays: vec![],

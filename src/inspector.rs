@@ -1138,6 +1138,30 @@ fn plant(s: &State, th: &Th, t: &Plant) -> Vec<El> {
     ]
 }
 
+/// Paper and scale for the PDF drawings.
+fn drawing_rows(s: &State, th: &Th) -> Vec<El> {
+    use crate::drawing::{Paper, fit, scales};
+    let papers: Vec<(&str, Paper)> = Paper::ALL.iter().map(|p| (p.name(), *p)).collect();
+    let all = scales(s.project.units);
+    let mut choices: Vec<(&str, Option<f32>)> = vec![("Best fit", None)];
+    choices.extend(all.iter().map(|(v, n)| (*n, Some(*v))));
+    let fitted = s.active().map(|l| fit(l, s.sheet.paper, s.project.units));
+    let name = |v: f32| all.iter().find(|(x, _)| (*x - v).abs() < 0.01).map(|(_, n)| n.to_string()).unwrap_or_else(|| format!("1:{v:.0}"));
+    vec![
+        section(th, "Drawings"),
+        choice(th, "Paper", "sheet-paper", &s.sheet.paper, &papers, |s: &mut State, p: Paper| s.sheet.paper = p),
+        choice(th, "Scale", "sheet-scale", &s.sheet.scale, &choices, |s: &mut State, v: Option<f32>| s.sheet.scale = v),
+        fact(th, "This level", match (s.sheet.scale, fitted) {
+            (None, Some(f)) => format!("fits at {}", name(f)),
+            (Some(v), Some(f)) if v < f => format!("too big at {}: it fits at {}", name(v), name(f)),
+            (Some(v), _) => format!("drawn at {}", name(v)),
+            _ => String::new(),
+        }),
+        row().w_full().mt(2.0).child(button(th, "sheet-save", "Save plans as PDF…", false).on_press_tx(crate::ui::save_drawings)),
+        text("A landscape page for each level: walls, doors and windows, room names and sizes, fixtures, and dimensions between the walls.").font(SMALL).color(th.dim).wrap(),
+    ]
+}
+
 fn light_rows(s: &State, th: &Th) -> Vec<El> {
     let lux = &s.lux;
     let busy = lux.request.is_pending();
@@ -1463,6 +1487,7 @@ fn project_panel(s: &State, th: &Th, lib: &Library) -> Vec<El> {
             .child(button(th, "level-remove", "Remove", false).on_press(move |s: &mut State| s.remove_level(level))),
     );
 
+    v.extend(drawing_rows(s, th));
     v.extend(underlay_rows(s, th));
 
     // The site.

@@ -148,6 +148,16 @@ change freely while the original stays as it was. Switch between options with a 
 option you came from is drawn in orange under the plan so the changes stand out. Options
 live in the same project file and travel in a shared link.
 
+## Drawings
+
+**Drawings as PDF…** (plan view) writes a dimensioned plan of every level, one landscape page
+each: walls, doors and windows, room names with areas and sizes, stairs, fixtures, a chain of
+dimensions between the walls with an overall figure, a north arrow and a scale bar. Choose A4,
+A3, Letter or Tabloid and a standard scale under **Drawings** in the project panel, or leave
+the scale on best fit. Elevations aren't drawn to PDF yet; save those as pictures.
+
+![A plan drawn to scale with dimensions](docs/drawing.png)
+
 ## Pictures and 3D export
 
 In the 3D and elevation views, **Save picture…** writes the view as a PNG at the window's

@@ -55,6 +55,23 @@ pub fn save_picture(s: &mut State, tx: &mut Tx) {
     });
 }
 
+/// Saves dimensioned plans of every level as a PDF.
+pub fn save_drawings(s: &mut State, tx: &mut Tx) {
+    s.commit_editing();
+    let mut options = FileDialogOptions { title: "Save the plans as a PDF".into(), ..Default::default() }.filter("PDF", &["pdf"]);
+    options.file_name = Some(format!("{}-plans.pdf", s.project.name.to_lowercase().replace(' ', "-")));
+    tx.save_file(options, |s: &mut State, result, _| match result {
+        Ok(Some(path)) => {
+            s.status = match std::fs::write(&path, crate::drawing::plans(&s.project, s.sheet)) {
+                Ok(()) => format!("Saved {}: a page for each level.", path.display()),
+                Err(e) => format!("Couldn't write {}: {e}", path.display()),
+            }
+        }
+        Ok(None) => {}
+        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+    });
+}
+
 /// Exports the house as a glTF 3D model.
 pub fn export_model(s: &mut State, tx: &mut Tx) {
     s.commit_editing();
@@ -218,6 +235,7 @@ fn options_bar(s: &State, th: &Th) -> El {
                 .child(ghost(th, "show-roofs", "Roofs", s.show_roofs).on_press(|s: &mut State| s.show_roofs = !s.show_roofs))
                 .child(ghost(th, "show-lux", "Light levels", s.lux.show).on_press(|s: &mut State| if s.lux.levels.is_none() { s.calculate_light() } else { s.show_light(!s.lux.show) }))
                 .child(spacer())
+                .child(ghost(th, "save-drawings", "Drawings as PDF…", false).on_press_tx(save_drawings))
                 .child(ghost(th, "fit", "Fit", false).on_press(|s: &mut State| {
                     s.plan_moved = false;
                     s.fit_plan()
