@@ -615,7 +615,7 @@ fn random_clicking_dragging_and_typing_never_breaks_the_house() {
         });
         for step in 0..steps {
             // Anywhere in the window except the file buttons at the right of the top bar.
-            let mut point = |dice: &mut Dice| {
+            let point = |dice: &mut Dice| {
                 let y = dice.between(0.0, SIZE.1);
                 (dice.between(0.0, if y < 46.0 { 1080.0 } else { SIZE.0 }), y)
             };
