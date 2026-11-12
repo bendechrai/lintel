@@ -180,8 +180,8 @@ Speech: Lintel doesn't listen to the microphone itself. Click in the box and use
 computer's own dictation (macOS: the microphone key or Fn twice; Windows: Win + H), then press
 Enter. **Speak replies** reads the answers aloud with the system voice (`say` on macOS, Windows
 speech, `spd-say` or `espeak` on Linux). The assistant can add and change walls, doors,
-windows, openings, garage doors, rooms and level heights; finishes, fixtures and furniture are
-still placed by hand. It has been tested against recorded API responses, not yet against the
+windows, openings, garage doors, rooms and level heights, and place outlets, switches, lights,
+smoke detectors and vents; finishes and furniture are still placed by hand. It has been tested against recorded API responses, not yet against the
 live service.
 
 ## Drawings

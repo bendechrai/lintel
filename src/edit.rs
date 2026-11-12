@@ -222,7 +222,7 @@ pub fn default_opening(tool: &Tool, wall: &Wall) -> Option<Opening> {
 }
 
 /// Where a new fixture of this kind goes when the plan is clicked at `p`.
-fn default_mount(level: &Level, kind: FixtureKind, p: P2) -> Option<Mount> {
+pub fn default_mount(level: &Level, kind: FixtureKind, p: P2) -> Option<Mount> {
     let on_wall = |height: f32| {
         let (w, at) = nearest_wall(level, p, 0.8)?;
         let (_, across) = geom::project(p, w.a, w.b);

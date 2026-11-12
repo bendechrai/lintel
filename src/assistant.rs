@@ -30,6 +30,7 @@ it. After you change the model, say in one short sentence what you did, then ask
 The model: coordinates are metres, X to the east (right on the plan) and Y to the north (up). A wall runs from one \
 point to another along its centre line and has a thickness. Openings (doors, windows) sit in a wall, placed by the \
 distance from the wall's first end to the opening's centre. Rooms are floor outlines, listed corner by corner. \
+Outlets and switches sit on a wall face at a height above the floor; lights sit on the ceiling. \
 Convert whatever units the person uses into metres yourself. Call get_house before your first change and whenever \
 you are unsure what exists; ids come from there and from the results of your own tool calls.\n\n\
 Keep replies short enough to be listened to: one or two sentences, no lists, no markdown.";
@@ -47,7 +48,7 @@ pub fn tools() -> Value {
     json!([
         {
             "name": "get_house",
-            "description": "Describes the house as it stands: the levels, and on the level being worked on every wall (id, ends, length, thickness, openings) and room (id, name, outline, area). Call this before making changes and whenever you need an id.",
+            "description": "Describes the house as it stands: the levels, and on the level being worked on every wall (id, ends, length, thickness, openings), room (id, name, outline, area) and fixture (id, kind, where). Call this before making changes and whenever you need an id.",
             "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
         },
         {
@@ -88,9 +89,19 @@ pub fn tools() -> Value {
             "input_schema": { "type": "object", "properties": { "room_id": { "type": "integer" }, "name": { "type": "string" }, "outline": { "type": "array", "items": point, "minItems": 3 }, "ceiling_height": { "type": "number" } }, "required": ["room_id"], "additionalProperties": false }
         },
         {
+            "name": "add_fixture",
+            "description": "Places an outlet, switch, light or other fixture. Outlets, data outlets, switches and thermostats go on a wall: give a point about 0.1 m off the wall face, on the side of the room they are in, and it snaps to that face. Lights, smoke detectors and ceiling vents go on the ceiling at the point given. Returns its id and where it landed.",
+            "input_schema": { "type": "object", "properties": {
+                "kind": { "type": "string", "enum": ["outlet", "data_outlet", "switch", "thermostat", "smoke_detector", "downlight", "pendant", "surface_light", "tube_light", "vent"] },
+                "position": point,
+                "height": { "type": "number", "description": "for wall fixtures: metres from the floor to its centre. Defaults: outlets 0.3, switches 1.1, thermostats 1.5" },
+                "label": { "type": "string", "description": "what it is for, such as 'fridge' or 'hall lights'" }
+            }, "required": ["kind", "position"], "additionalProperties": false }
+        },
+        {
             "name": "remove",
-            "description": "Removes a wall, an opening or a room. For an opening give its wall's id as well.",
-            "input_schema": { "type": "object", "properties": { "what": { "type": "string", "enum": ["wall", "opening", "room"] }, "id": { "type": "integer" }, "wall_id": { "type": "integer" } }, "required": ["what", "id"], "additionalProperties": false }
+            "description": "Removes a wall, an opening, a room or a fixture. For an opening give its wall's id as well.",
+            "input_schema": { "type": "object", "properties": { "what": { "type": "string", "enum": ["wall", "opening", "room", "fixture"] }, "id": { "type": "integer" }, "wall_id": { "type": "integer" } }, "required": ["what", "id"], "additionalProperties": false }
         },
         {
             "name": "set_level",
@@ -136,6 +147,22 @@ pub fn describe(project: &Project, level: Id) -> Value {
                 "at": round(o.at), "width": round(o.width), "height": round(o.height), "sill": round(o.sill),
             })).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
+        "fixtures": l.fixtures.iter().map(|f| {
+            let mut v = json!({ "id": f.id, "kind": f.kind.name() });
+            match f.mount {
+                Mount::Wall { wall, at, height, .. } => {
+                    v["wall_id"] = json!(wall);
+                    v["at"] = json!(round(at));
+                    v["height"] = json!(round(height));
+                }
+                Mount::Ceiling { at, .. } => v["on_ceiling_at"] = pt(at),
+                Mount::Floor { at, .. } => v["on_floor_at"] = pt(at),
+            }
+            if !f.label.is_empty() {
+                v["label"] = json!(f.label);
+            }
+            v
+        }).collect::<Vec<_>>(),
         "rooms": l.rooms.iter().map(|r| json!({ "id": r.id, "name": r.name, "outline": r.outline.iter().map(|p| pt(*p)).collect::<Vec<_>>(), "area": round(geom::area(&r.outline).abs()) })).collect::<Vec<_>>(),
     })
 }
@@ -290,6 +317,35 @@ pub fn apply(project: &mut Project, level: &mut Id, name: &str, input: &Value) -
             }
             Ok(json!({ "room_id": room, "name": r.name, "area": round(geom::area(&r.outline).abs()) }))
         }
+        "add_fixture" => {
+            let kind = match input.get("kind").and_then(Value::as_str).ok_or(missing("kind"))? {
+                "outlet" => FixtureKind::Outlet { gangs: 2 },
+                "data_outlet" => FixtureKind::Data,
+                "switch" => FixtureKind::Switch { gangs: 1 },
+                "thermostat" => FixtureKind::Thermostat,
+                "smoke_detector" => FixtureKind::SmokeDetector,
+                "downlight" => FixtureKind::Downlight { diameter: 0.1 },
+                "pendant" => FixtureKind::Pendant { diameter: 0.3, drop: 0.8 },
+                "surface_light" => FixtureKind::Surface { diameter: 0.3 },
+                "tube_light" => FixtureKind::TubeLight { length: 1.2, width: 0.09 },
+                "vent" => FixtureKind::Vent { width: 0.6, height: 0.4 },
+                other => return Err(format!("`{other}` isn't a kind of fixture")),
+            };
+            let at = point(input, "position").ok_or(missing("position"))?;
+            let new = project.id();
+            let l = project.level_mut(*level).ok_or("there is no level to work on")?;
+            let mut mount = crate::edit::default_mount(l, kind, at).ok_or("that goes on a wall, and there is no wall within 0.8 m of that point")?;
+            if let (Mount::Wall { height, .. }, Some(h)) = (&mut mount, number(input, "height")) {
+                *height = h.clamp(0.0, 10.0);
+            }
+            let mut fixture = Fixture::new(new, kind, mount);
+            fixture.label = input.get("label").and_then(Value::as_str).unwrap_or_default().to_string();
+            l.fixtures.push(fixture);
+            Ok(match mount {
+                Mount::Wall { wall, at, height, .. } => json!({ "fixture_id": new, "wall_id": wall, "at": round(at), "height": round(height) }),
+                Mount::Ceiling { at, .. } | Mount::Floor { at, .. } => json!({ "fixture_id": new, "at": pt(at) }),
+            })
+        }
         "remove" => {
             let what = input.get("what").and_then(Value::as_str).ok_or(missing("what"))?;
             let target = id(input, "id").ok_or(missing("id"))?;
@@ -305,6 +361,13 @@ pub fn apply(project: &mut Project, level: &mut Id, name: &str, input: &Value) -
                     l.rooms.retain(|r| r.id != target);
                     l.rooms.len() < n
                 }),
+                "fixture" => project.levels.iter_mut().any(|l| {
+                    let n = l.fixtures.len();
+                    l.fixtures.retain(|f| f.id != target);
+                    // A switch no longer controls a light that is gone.
+                    l.fixtures.iter_mut().for_each(|f| f.controls.retain(|c| *c != target));
+                    l.fixtures.len() < n
+                }),
                 "opening" => {
                     let wall = id(input, "wall_id").ok_or(missing("wall_id"))?;
                     let w = project.wall_mut(wall).ok_or(format!("there is no wall {wall}"))?;
@@ -312,7 +375,7 @@ pub fn apply(project: &mut Project, level: &mut Id, name: &str, input: &Value) -
                     w.openings.retain(|o| o.id != target);
                     w.openings.len() < n
                 }
-                other => return Err(format!("`{other}` can't be removed here: use wall, opening or room")),
+                other => return Err(format!("`{other}` can't be removed here: use wall, opening, room or fixture")),
             };
             if found { Ok(json!({ "removed": what, "id": target })) } else { Err(format!("there is no {what} {target}")) }
         }
@@ -461,6 +524,15 @@ mod tests {
         let house = apply(&mut p, &mut level, "get_house", &json!({})).unwrap();
         assert_eq!(house["walls"][0]["openings"][0]["kind"], "door");
         assert_eq!(house["rooms"][0]["name"], "Living room");
+        // An outlet 1 m along the south wall, on the room side, at the usual height; a light overhead.
+        let outlet = apply(&mut p, &mut level, "add_fixture", &json!({ "kind": "outlet", "position": [1.0, 0.2], "label": "TV" })).unwrap();
+        assert_eq!((outlet["wall_id"].as_u64(), outlet["at"].as_f64(), outlet["height"].as_f64()), (Some(id), Some(1.0), Some(0.3)));
+        let light = apply(&mut p, &mut level, "add_fixture", &json!({ "kind": "downlight", "position": [2.6, 2.0] })).unwrap();
+        assert!(apply(&mut p, &mut level, "add_fixture", &json!({ "kind": "switch", "position": [2.6, 2.0] })).unwrap_err().contains("no wall"));
+        let house = apply(&mut p, &mut level, "get_house", &json!({})).unwrap();
+        assert_eq!((house["fixtures"].as_array().unwrap().len(), house["fixtures"][0]["label"].as_str()), (2, Some("TV")));
+        apply(&mut p, &mut level, "remove", &json!({ "what": "fixture", "id": light["fixture_id"] })).unwrap();
+        assert_eq!(p.levels[0].fixtures.len(), 1);
         // Bad input is an error to hand back, not a panic.
         assert!(apply(&mut p, &mut level, "add_wall", &json!({ "from": [0, 0] })).is_err());
         assert!(apply(&mut p, &mut level, "update_wall", &json!({ "wall_id": 9999, "length": 3 })).is_err());
