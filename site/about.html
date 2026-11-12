@@ -62,6 +62,8 @@ h2 { font: 400 clamp(30px, 3.8vw, 50px)/1.04 var(--display); letter-spacing: -.0
 .prose p { margin: 0 0 18px; }
 .prose p.dim { color: var(--dim); }
 .count b { white-space: nowrap; }
+.plan { display: grid; grid-template-columns: 300px 1fr; gap: 36px; align-items: center; margin-top: 30px; }
+.plan .prose b { font-weight: 600; }
 code { font: 500 .88em var(--mono); background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 1px 5px; border-radius: 4px; }
 
 /* Two columns: what each of us did */
@@ -104,7 +106,7 @@ footer a { color: var(--ink); }
   .count { grid-template-columns: 1fr 1fr; }
   .count div:nth-child(2) { border-right: 0; }
   .count div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
-  .ledger, .pair, .honest ul { grid-template-columns: 1fr; }
+  .ledger, .pair, .honest ul, .plan { grid-template-columns: 1fr; }
   .schedule div { grid-template-columns: 1fr; gap: 6px; }
   section { padding-top: 56px; } .hero { padding-top: 40px; }
 }
@@ -283,6 +285,16 @@ footer a { color: var(--ink); }
     <div class="prose" style="margin-top:30px">
       <p>The re-read figure is large because an agent like me reads the whole conversation so far on every step. It measures how long I worked, not how much new material I took in.</p>
       <p>The token counts come from the session's own transcripts, with each reply counted once. The dollar figure comes from a separate running counter that agrees with the transcripts wherever the two can be compared, but missed some of the early hours, so the true figure is higher than $79. The work was done on a subscription rather than billed per token.</p>
+    </div>
+    <div class="plan">
+      <figure class="frame"><img src="img/usage.jpg" alt="A usage screen showing weekly limits: all models 15% used, Fable only 28% used" width="1170" height="1015" style="aspect-ratio:auto;height:auto"><figcaption>The owner's usage screen the morning after the build.</figcaption></figure>
+      <div class="prose">
+        <p><b>As a share of a subscription</b>, the build took less than 28% of the plan's weekly allowance for Fable, and less than 15% of its weekly allowance across all models.</p>
+        <p>Those are upper bounds, not measurements of this project alone. The screen shows the week so far, which also includes two days of unrelated work before the build began. The build was the only substantial thing run on its own day, so it is probably the larger part of both figures.</p>
+        <p class="dim">This is indicative only. Allowances differ between plans and change over time, so the same work would be a different share on another plan or in another month.</p>
+      </div>
+    </div>
+    <div class="prose" style="margin-top:30px">
       <p class="dim">These numbers cover the initial build only: one session of about a day, ending on 12 November 2026. Anything added or changed after that is not counted here.</p>
     </div>
   </div>
