@@ -710,6 +710,9 @@ pub struct Room {
     /// False for a deck, a porch or a carport: a floor with nothing over it.
     #[serde(default = "yes")]
     pub has_ceiling: bool,
+    /// How the ceiling rises above `ceiling_height`, which is then its lowest edge.
+    #[serde(default)]
+    pub ceiling_shape: CeilingShape,
     /// A board along the foot of the room's walls.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skirting: Option<Trim>,
@@ -719,6 +722,48 @@ pub struct Room {
     /// The light level this room should reach, in lux, if it has a target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_lux: Option<f32>,
+}
+
+/// The shape of a room's ceiling.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "shape", rename_all = "snake_case")]
+pub enum CeilingShape {
+    #[default]
+    Flat,
+    /// One plane, rising `rise` metres across the room toward `toward` (radians from +X
+    /// toward +Y).
+    Sloped { rise: f32, toward: f32 },
+    /// Two planes rising `rise` metres to a ridge down the middle of the room, which runs
+    /// along `along` (radians from +X toward +Y).
+    Vaulted { rise: f32, along: f32 },
+}
+
+impl Room {
+    /// How far above its lowest edge the ceiling is at a plan point.
+    pub fn ceiling_rise(&self, p: P2) -> f32 {
+        // Where `p` lies across the room's extent along a direction, 0 at one side, 1 at the other.
+        let across = |angle: f32| {
+            let u = [angle.cos(), angle.sin()];
+            let along = |q: &P2| q[0] * u[0] + q[1] * u[1];
+            let (lo, hi) = self.outline.iter().map(along).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+            if hi - lo < 1e-4 { 0.0 } else { ((along(&p) - lo) / (hi - lo)).clamp(0.0, 1.0) }
+        };
+        match self.ceiling_shape {
+            CeilingShape::Flat => 0.0,
+            CeilingShape::Sloped { rise, toward } => rise * across(toward),
+            CeilingShape::Vaulted { rise, along } => rise * (1.0 - (2.0 * across(along + std::f32::consts::FRAC_PI_2) - 1.0).abs()),
+        }
+    }
+
+    /// The plan line of a vaulted ceiling's ridge: a point on it and its direction.
+    pub fn ridge(&self) -> Option<(P2, P2)> {
+        let CeilingShape::Vaulted { along, .. } = self.ceiling_shape else { return None };
+        let v = [-(along.sin()), along.cos()];
+        let side = |q: &P2| q[0] * v[0] + q[1] * v[1];
+        let (lo, hi) = self.outline.iter().map(side).fold((f32::MAX, f32::MIN), |(lo, hi), x| (lo.min(x), hi.max(x)));
+        let mid = (lo + hi) / 2.0;
+        Some(([v[0] * mid, v[1] * mid], [along.cos(), along.sin()]))
+    }
 }
 
 /// A strip of trim that runs round a room: a skirting board or a cornice.
@@ -959,6 +1004,9 @@ pub struct Furniture {
     /// The main finish (upholstery, carcass, body) and the secondary one (legs, benchtop, trim).
     pub finish: Finish,
     pub accent: Finish,
+    /// Hangs from the ceiling: its top is at the ceiling, wherever that is (a bulkhead, a beam).
+    #[serde(default)]
+    pub hung: bool,
 }
 
 // ---------------------------------------------------------------------------------------------

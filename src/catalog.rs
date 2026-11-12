@@ -14,6 +14,8 @@ pub struct Piece {
     pub lift: f32,
     pub finish: Finish,
     pub accent: Finish,
+    /// Hangs from the ceiling instead of standing on the floor.
+    pub hung: bool,
 }
 
 /// Which finish a part of a piece takes.
@@ -37,7 +39,7 @@ pub struct Part {
 }
 
 fn p(key: &'static str, name: &'static str, group: &'static str, size: [f32; 3], lift: f32, finish: Finish, accent: Finish) -> Piece {
-    Piece { key, name, group, size, lift, finish, accent }
+    Piece { key, name, group, size, lift, finish, accent, hung: false }
 }
 
 fn dark() -> Finish {
@@ -109,6 +111,8 @@ pub fn catalog() -> Vec<Piece> {
         p("shower", "Shower", "Bathroom", [0.9, 0.9, 2.0], 0.0, porcelain(), of("steel")),
         // Garage.
         p("car", "Car", "Garage", [1.85, 4.6, 1.45], 0.0, Finish::colored("paint_gloss", rgb(0x5a6b7a)), dark()),
+        Piece { hung: true, ..p("bulkhead", "Bulkhead", "Ceiling", [2.4, 0.6, 0.3], 0.0, paint(0xfafaf7), paint(0xfafaf7)) },
+        Piece { hung: true, ..p("beam", "Exposed beam", "Ceiling", [4.0, 0.14, 0.24], 0.0, of("oak"), of("oak")) },
     ]
 }
 
@@ -119,7 +123,7 @@ pub fn piece(key: &str) -> Option<Piece> {
 /// A new piece of furniture of this kind at `at`, at its catalogue size and finishes.
 pub fn place(key: &str, id: Id, at: P2) -> Option<Furniture> {
     let p = piece(key)?;
-    Some(Furniture { id, kind: p.key.into(), name: p.name.into(), at, turn: 0.0, size: p.size, lift: p.lift, finish: p.finish, accent: p.accent })
+    Some(Furniture { id, kind: p.key.into(), name: p.name.into(), at, turn: 0.0, size: p.size, lift: p.lift, finish: p.finish, accent: p.accent, hung: p.hung })
 }
 
 /// Where a cabinet door's handle goes.
@@ -598,7 +602,7 @@ mod tests {
             let f = place(a.key, 1, [0.0, 0.0]).unwrap();
             let parts = parts(&f);
             assert!(!parts.is_empty(), "{} has no parts", a.key);
-            assert!(parts.len() > 1 || matches!(a.key, "coffee_table_marble"), "{} is only a box", a.key);
+            assert!(parts.len() > 1 || a.hung || matches!(a.key, "coffee_table_marble"), "{} is only a box", a.key);
             for part in &parts {
                 for i in 0..3 {
                     assert!(part.max[i] > part.min[i], "{}: empty part {part:?}", a.key);

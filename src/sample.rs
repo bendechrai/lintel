@@ -37,7 +37,7 @@ impl B {
     }
 
     fn room(&mut self, name: &str, outline: &[P2], floor: Finish) -> Room {
-        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }
+        Room { id: self.p.id(), name: name.into(), outline: outline.to_vec(), floor, ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }
     }
 
     fn fixture(&mut self, kind: FixtureKind, mount: Mount) -> Fixture {
@@ -56,6 +56,7 @@ impl B {
             lift: 0.0,
             finish: Finish::of("oak"),
             accent: Finish::of("steel"),
+            hung: false,
         })
     }
 }
@@ -250,6 +251,8 @@ pub fn house() -> Project {
     main.rooms.push(hall);
     let mut living = b.room("Living room", &rect(8.4, 0.0, 15.0, 5.2), Finish::of("oak_boards"));
     living.target_lux = Some(150.0);
+    // The living room's ceiling follows the roof up toward the middle of the house.
+    living.ceiling_shape = CeilingShape::Sloped { rise: 1.6, toward: FRAC_PI_2 };
     main.rooms.push(living);
     let mut kitchen = b.room("Kitchen & dining", &[[7.4, 4.6], [8.4, 4.6], [8.4, 5.2], [15.0, 5.2], [15.0, 11.0], [7.4, 11.0]], Finish::of("laminate_boards"));
     kitchen.target_lux = Some(300.0);
@@ -279,6 +282,8 @@ pub fn house() -> Project {
         ("coffee_table_glass", [11.6, 2.5], 0.0),
         ("tv_unit", [11.6, 0.45], 0.0),
         ("tv", [11.6, 0.25], 0.0),
+        ("beam", [11.7, 1.7], 0.0),
+        ("beam", [11.7, 3.5], 0.0),
         // Kitchen along the stair wall, island in front of it.
         ("fridge", [7.85, 5.2], FRAC_PI_2),
         ("base_cabinet", [7.75, 6.05], FRAC_PI_2),

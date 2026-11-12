@@ -173,7 +173,11 @@ fn room_box(level: &Level, p: [f32; 3]) -> ([f32; 3], [f32; 3]) {
         Some(r) => {
             let (lo, hi) = r.outline.iter().fold(([f32::MAX; 2], [f32::MIN; 2]), |(lo, hi), q| ([lo[0].min(q[0]), lo[1].min(q[1])], [hi[0].max(q[0]), hi[1].max(q[1])]));
             let floor = level.elevation + r.floor_offset;
-            let top = floor + r.ceiling_height.unwrap_or(level.height);
+            let rise = match r.ceiling_shape {
+                crate::model::CeilingShape::Flat => 0.0,
+                crate::model::CeilingShape::Sloped { rise, .. } | crate::model::CeilingShape::Vaulted { rise, .. } => rise.max(0.0),
+            };
+            let top = floor + r.ceiling_height.unwrap_or(level.height) + rise;
             ([lo[0] - pad, lo[1] - pad, floor - pad], [hi[0] + pad, hi[1] + pad, top + pad])
         }
         None => ([p[0] - 4.0, p[1] - 4.0, level.elevation - pad], [p[0] + 4.0, p[1] + 4.0, level.elevation + level.height + pad]),

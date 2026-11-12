@@ -49,7 +49,7 @@ fn house() -> Project {
         Opening { id: 44, at: 4.2, width: 0.5, height: 2.0, sill: 0.0, kind: OpeningKind::Garage(GarageDoor { style: GarageStyle::Tilt, inside: WallSide::Left, open: 0.5, panels: 1, finish: Finish::paint(0xcccccc) }) },
     ];
     level.walls = vec![south, east, north, west, nib];
-    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
+    level.rooms = vec![Room { id: 50, name: "Room".into(), outline: vec![[0.0, 0.0], [6.0, 0.0], [6.0, 4.0], [0.0, 4.0]], floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xffffff), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![
         Stair { id: 60, at: [1.0, 1.0], direction: 0.0, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: true, railing: Railing::Both },
         Stair { id: 61, at: [1.0, 3.0], direction: 0.3, width: 0.9, run: 3.0, rise: 2.9, steps: 14, tread: Finish::of("oak"), closed: false, railing: Railing::Left },
@@ -79,11 +79,11 @@ fn house() -> Project {
         f.turn = i as f32 * 0.3;
         level.furniture.push(f);
     }
-    level.furniture.push(Furniture { id: 299, kind: "no such thing".into(), name: String::new(), at: [1.0, 1.0], turn: 0.0, size: [1.0, 1.0, 1.0], lift: 0.0, finish: Finish::of("oak"), accent: Finish::of("oak") });
+    level.furniture.push(Furniture { id: 299, kind: "no such thing".into(), name: String::new(), at: [1.0, 1.0], turn: 0.0, size: [1.0, 1.0, 1.0], lift: 0.0, finish: Finish::of("oak"), accent: Finish::of("oak"), hung: false });
 
     let mut upper = Level::new(2, "Upper", 2.9, 2.4);
     upper.walls = vec![wall(70, [0.0, 0.0], [6.0, 0.0])];
-    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
+    upper.rooms = vec![Room { id: 71, name: "Loft".into(), outline: vec![[0.0, 4.0], [6.0, 4.0], [6.0, 0.0], [3.0, 0.0], [3.0, 2.0], [0.0, 2.0]], floor: Finish::of("carpet"), ceiling: Finish::paint(0xffffff), ceiling_height: Some(2.2), floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
 
     let roof = |id: Id, shape: RoofShape, center: P2| Roof { id, name: "Roof".into(), shape, center, size: [7.0, 4.5], turn: 0.2, base: 5.3, pitch: 0.5, overhang: 0.4, thickness: 0.2, finish: Finish::of("shingle"), gable: Finish::of("siding"), visible: true };
     Project {
@@ -258,7 +258,7 @@ fn an_empty_project_builds_to_nothing() {
     let mut project = project;
     let mut level = Level::new(1, "L", 0.0, 2.4);
     level.walls = vec![wall(1, [1.0, 1.0], [1.0, 1.0])];
-    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None }];
+    level.rooms = vec![Room { id: 2, name: String::new(), outline: vec![[0.0, 0.0], [1.0, 1.0]], floor: Finish::of("oak"), ceiling: Finish::of("paint"), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None }];
     level.stairs = vec![Stair { id: 3, at: [0.0, 0.0], direction: 0.0, width: 1.0, run: 0.0, rise: 3.0, steps: 0, tread: Finish::of("oak"), closed: true, railing: Railing::Both }];
     project.levels = vec![level];
     assert!(build(&project, &BuildOptions::default()).vertices.is_empty());
@@ -409,4 +409,55 @@ fn a_part_height_finish_covers_its_band_of_one_face_and_goes_round_openings() {
             assert!(!((along - o.at).abs() < o.width / 2.0 - 1e-3 && z > o.sill + 1e-3 && z < (o.sill + o.height).min(1.2) - 1e-3), "tile inside an opening");
         }
     }
+}
+
+#[test]
+fn a_sloped_ceiling_rises_across_the_room_and_the_walls_fill_in_under_it() {
+    use crate::model::CeilingShape;
+    let mut project = house();
+    let options = BuildOptions { terrain: false, roofs: false, furniture: false, fixtures: false, ..Default::default() };
+    let flat = build(&project, &options);
+    let level = &mut project.levels[0];
+    let (floor, height) = (level.elevation + level.rooms[0].floor_offset, level.rooms[0].ceiling_height.unwrap_or(level.height));
+    let id = level.rooms[0].id;
+    level.rooms[0].ceiling_shape = CeilingShape::Sloped { rise: 1.5, toward: 0.0 };
+    let (lo, hi) = level.rooms[0].outline.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p[0]), hi.max(p[0])));
+    let sloped = build(&project, &options);
+    let pick = pick_of(&sloped, Pick::Room(id));
+    // The ceiling's underside: low on the west side, 1.5 m higher on the east.
+    let under: Vec<_> = sloped.vertices.iter().filter(|v| v.pick == pick && v.normal[2] < -0.5 && v.pos[2] > floor + 1.0).collect();
+    let at = |x: f32| under.iter().filter(|v| (v.pos[0] - x).abs() < 1e-3).map(|v| v.pos[2]).fold(f32::MIN, f32::max);
+    assert!((at(lo) - (floor + height)).abs() < 0.02, "{}", at(lo));
+    assert!((at(hi) - (floor + height + 1.5)).abs() < 0.02, "{}", at(hi));
+    // Walls gained a piece above their flat tops, up to the slope and no higher.
+    let top_of = |scene: &crate::scene::Scene| {
+        let walls: Vec<f32> = project.levels[0].walls.iter().map(|w| pick_of(scene, Pick::Wall(w.id))).collect();
+        scene.vertices.iter().filter(|v| walls.contains(&v.pick)).map(|v| v.pos[2]).fold(f32::MIN, f32::max)
+    };
+    let (wall_top, flat_top) = (top_of(&sloped), top_of(&flat));
+    assert!(wall_top > flat_top + 1.0 && wall_top <= floor + height + 1.5 + 0.01, "{wall_top} vs {flat_top}");
+    // A vaulted ceiling peaks in the middle and is back down at both sides.
+    project.levels[0].rooms[0].ceiling_shape = CeilingShape::Vaulted { rise: 1.2, along: std::f32::consts::FRAC_PI_2 };
+    let r = &project.levels[0].rooms[0];
+    assert!(r.ceiling_rise([lo, 1.0]).abs() < 1e-4 && r.ceiling_rise([hi, 1.0]).abs() < 1e-4);
+    assert!((r.ceiling_rise([(lo + hi) / 2.0, 1.0]) - 1.2).abs() < 1e-4);
+    let vaulted = build(&project, &options);
+    let peak = vaulted.vertices.iter().filter(|v| v.pick == pick_of(&vaulted, Pick::Room(id)) && v.normal[2] < -0.3).map(|v| v.pos[2]).fold(f32::MIN, f32::max);
+    assert!((peak - (floor + height + 1.2)).abs() < 0.02, "{peak}");
+}
+
+#[test]
+fn a_beam_hangs_from_the_ceiling_wherever_that_is() {
+    let mut project = house();
+    let level = &mut project.levels[0];
+    let room = &level.rooms[0];
+    let c = crate::geom::centroid(&room.outline);
+    let ceiling = level.elevation + room.floor_offset + room.ceiling_height.unwrap_or(level.height);
+    let beam = crate::catalog::place("beam", 900, c).unwrap();
+    assert!(beam.hung);
+    level.furniture.push(beam);
+    let scene = build(&project, &BuildOptions { terrain: false, roofs: false, fixtures: false, ..Default::default() });
+    let pick = pick_of(&scene, Pick::Furniture(900));
+    let (lo, hi) = scene.vertices.iter().filter(|v| v.pick == pick).fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(v.pos[2]), hi.max(v.pos[2])));
+    assert!((hi - ceiling).abs() < 0.02 && (hi - lo - 0.24).abs() < 0.01, "{lo}..{hi} under a ceiling at {ceiling}");
 }

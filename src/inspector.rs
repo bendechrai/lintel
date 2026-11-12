@@ -472,6 +472,55 @@ fn room(s: &State, th: &Th, lib: &Library, level: &Level, r: &Room) -> Vec<El> {
                 r.ceiling_height = if (x - level_height).abs() < 0.001 { None } else { Some(x.max(0.5)) }
             }
         }));
+        let kind = match r.ceiling_shape {
+            CeilingShape::Flat => 0,
+            CeilingShape::Sloped { .. } => 1,
+            CeilingShape::Vaulted { .. } => 2,
+        };
+        v.push(choice(th, "Ceiling is", "room-shape", &kind, &[("Flat", 0), ("Sloped", 1), ("Vaulted", 2)], on_project("", move |p: &mut Project, k: i32| {
+            if let Some(r) = p.room_mut(id) {
+                // Keep the rise and direction when switching between the two shaped kinds.
+                let (rise, angle) = match r.ceiling_shape {
+                    CeilingShape::Flat => (1.0, std::f32::consts::FRAC_PI_2),
+                    CeilingShape::Sloped { rise, toward } => (rise, toward),
+                    CeilingShape::Vaulted { rise, along } => (rise, along),
+                };
+                r.ceiling_shape = match k {
+                    1 => CeilingShape::Sloped { rise, toward: angle },
+                    2 => CeilingShape::Vaulted { rise, along: angle },
+                    _ => CeilingShape::Flat,
+                };
+            }
+        })));
+        match r.ceiling_shape {
+            CeilingShape::Flat => {}
+            CeilingShape::Sloped { rise, toward } => {
+                v.push(len(s, th, "Rises by", "room-rise", rise, move |p, x| {
+                    if let Some(CeilingShape::Sloped { rise, .. }) = p.room_mut(id).map(|r| &mut r.ceiling_shape) {
+                        *rise = x.clamp(0.0, 10.0)
+                    }
+                }));
+                v.push(num(s, th, "Toward", "room-toward", toward, Fmt::Degrees, 15f32.to_radians(), on_project("room-toward", move |p: &mut Project, x: f32| {
+                    if let Some(CeilingShape::Sloped { toward, .. }) = p.room_mut(id).map(|r| &mut r.ceiling_shape) {
+                        *toward = x
+                    }
+                })));
+                v.push(text("The height above is the low edge. 0° rises to the east, 90° to the top of the plan.").font(SMALL).color(th.dim).wrap());
+            }
+            CeilingShape::Vaulted { rise, along } => {
+                v.push(len(s, th, "Rises by", "room-rise", rise, move |p, x| {
+                    if let Some(CeilingShape::Vaulted { rise, .. }) = p.room_mut(id).map(|r| &mut r.ceiling_shape) {
+                        *rise = x.clamp(0.0, 10.0)
+                    }
+                }));
+                v.push(num(s, th, "Ridge runs", "room-along", along, Fmt::Degrees, 15f32.to_radians(), on_project("room-along", move |p: &mut Project, x: f32| {
+                    if let Some(CeilingShape::Vaulted { along, .. }) = p.room_mut(id).map(|r| &mut r.ceiling_shape) {
+                        *along = x
+                    }
+                })));
+                v.push(text("The height above is at the eaves; the ridge runs down the middle. 0° runs east-west, 90° up the plan.").font(SMALL).color(th.dim).wrap());
+            }
+        }
         v.push(fin(s, th, lib, "Ceiling", "room-ceiling", &r.ceiling, move |p, f| {
             if let Some(r) = p.room_mut(id) {
                 r.ceiling = f

@@ -329,6 +329,13 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.camera.pitch = 0.42;
         s.camera.distance = 6.5;
     }),
+    ("living-section", |s| {
+        s.bare = true;
+        s.side = crate::app::Side::East;
+        s.section = Some(2.5);
+        s.set_view(ViewMode::Elevation);
+        s.aim_elevation(true);
+    }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 

@@ -106,7 +106,9 @@ fn furniture(cx: &mut Ctx, level: &Level) {
         let pick = cx.scene.pick_id(Some(Pick::Furniture(piece.id)));
         let (sin, cos) = piece.turn.sin_cos();
         let floor = rooms::floor_at(level, piece.at);
-        let frame = geom::Frame3::upright([piece.at[0], piece.at[1], floor + piece.lift], [cos, sin]);
+        // A hung piece's top is at the ceiling above its centre.
+        let base = if piece.hung { rooms::ceiling_at(level, piece.at) - piece.size[2].max(0.005) - 0.005 } else { floor + piece.lift };
+        let frame = geom::Frame3::upright([piece.at[0], piece.at[1], base], [cos, sin]);
         let (main, accent) = (cx.surf(&piece.finish), cx.surf(&piece.accent));
         for part in catalog::parts(piece) {
             let s = match &part.finish {

@@ -29,6 +29,8 @@ Built in Rust with [Rune](https://github.com/anomalyco/rune).
   height and floor offset. Where there is no room there is no floor, which is how a stairwell
   stays open.
   A room can have a skirting board and a cornice, which stop at doorways.
+  Ceilings can be flat, sloped or vaulted, and the walls fill in up to them; bulkheads and
+  exposed beams hang from the ceiling wherever it is.
 - **Stairs**, **roofs** (gable, hip, shed, flat).
 - **Fixtures**: power and data outlets, light switches, thermostats, smoke detectors,
   downlights, recessed tube lights, LED strips in diffuser channels, surface and pendant

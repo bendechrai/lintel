@@ -423,15 +423,15 @@ fn draw_furniture(d: &mut Draw, f: &Furniture, selected: bool) {
     let pts = geom::oriented_rect(f.at, f.size[0], f.size[1], f.turn);
     let swatch = srgb(d.lib.swatch(&f.finish));
     let line = if selected { ink.accent } else { ink.line.alpha(0.85) };
-    d.fill(&pts, swatch.mix(ink.paper, 0.45).alpha(if f.lift > 0.5 { 0.35 } else { 0.8 }));
-    if f.lift > 0.5 {
+    d.fill(&pts, swatch.mix(ink.paper, 0.45).alpha(if f.lift > 0.5 || f.hung { 0.35 } else { 0.8 }));
+    if f.lift > 0.5 || f.hung {
         d.dashed_outline(&pts, 1.0, line);
     } else {
         d.outline(&pts, if selected { 1.75 } else { 1.0 }, line);
     }
     // The front edge, heavier.
     d.line(pts[0], pts[1], if selected { 3.0 } else { 2.0 }, line);
-    if d.cam.zoom > 52.0 && f.size[0] * d.cam.zoom > 58.0 && f.size[1] * d.cam.zoom > 22.0 && f.lift < 0.5 {
+    if d.cam.zoom > 52.0 && f.size[0] * d.cam.zoom > 58.0 && f.size[1] * d.cam.zoom > 22.0 && !(f.lift > 0.5 || f.hung) {
         d.label(f.at, f.name.clone(), SMALL, ink.faint);
     }
 }

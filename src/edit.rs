@@ -321,7 +321,7 @@ fn finish_draw(s: &mut State, a: P2, b: P2) {
             let id = s.project.id();
             if let Some(l) = level_mut(s) {
                 let name = format!("Room {}", l.rooms.len() + 1);
-                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, skirting: None, cornice: None, target_lux: None });
+                l.rooms.push(Room { id, name, outline: rect, floor: Finish::of("oak_boards"), ceiling: Finish::paint(0xfafaf7), ceiling_height: None, floor_offset: 0.0, has_ceiling: true, ceiling_shape: CeilingShape::Flat, skirting: None, cornice: None, target_lux: None });
             }
             s.touch();
             s.tool = Tool::Select;
