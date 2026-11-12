@@ -59,6 +59,14 @@ pub struct Viewport {
 pub trait Host: 'static {
     /// The viewport to draw, when the view has a `SLOT` element on screen.
     fn viewport(&self) -> Option<Viewport>;
+
+    /// True while the app wants the 3D image read back (to save it as a picture).
+    fn capture_wanted(&self) -> bool {
+        false
+    }
+
+    /// The 3D image as it was last drawn: width, height and sRGB RGBA bytes, row by row.
+    fn captured(&mut self, _image: Result<(u32, u32, Vec<u8>), String>) {}
 }
 
 const SHADOW_SIZE: u32 = 2048;
@@ -113,6 +121,7 @@ struct Targets {
     msaa: wgpu::TextureView,
     depth: wgpu::TextureView,
     resolved: wgpu::TextureView,
+    resolved_texture: wgpu::Texture,
     blit_bind: wgpu::BindGroup,
 }
 
@@ -148,6 +157,8 @@ struct Dev {
 #[derive(Default)]
 pub struct Gfx {
     dev: Option<Dev>,
+    /// A picture was asked for and the frame to read back has been drawn.
+    capture_armed: bool,
 }
 
 impl Gfx {
@@ -348,7 +359,17 @@ impl Dev {
         let attach = wgpu::TextureUsages::RENDER_ATTACHMENT;
         let msaa = texture(device, "lintel colour", size, SAMPLES, COLOR, attach);
         let depth = texture(device, "lintel depth", size, SAMPLES, DEPTH, attach);
-        let resolved = texture(device, "lintel resolved", size, 1, COLOR, attach | wgpu::TextureUsages::TEXTURE_BINDING);
+        let resolved_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("lintel resolved"),
+            size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: COLOR,
+            usage: attach | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let resolved = resolved_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let blit_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("lintel blit"),
             layout: &self.blit_bgl,
@@ -358,7 +379,7 @@ impl Dev {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.blit_sampler) },
             ],
         });
-        self.targets = Some(Targets { size, msaa, depth, resolved, blit_bind });
+        self.targets = Some(Targets { size, msaa, depth, resolved, resolved_texture, blit_bind });
     }
 
     fn mesh(&mut self, device: &wgpu::Device, view: &Viewport) {
@@ -469,7 +490,44 @@ fn globals(view: &Viewport, aspect: f32) -> Globals {
     }
 }
 
+/// Copies the resolved 3D image out of the GPU.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, t: &Targets) -> Result<(u32, u32, Vec<u8>), String> {
+    let (w, h) = t.size;
+    let stride = (w * 4).div_ceil(256) * 256;
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor { label: Some("lintel capture"), size: (stride * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("lintel capture") });
+    encoder.copy_texture_to_buffer(
+        wgpu::TexelCopyTextureInfo { texture: &t.resolved_texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+        wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(stride), rows_per_image: Some(h) } },
+        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+    );
+    queue.submit([encoder.finish()]);
+    let (tx, rx) = std::sync::mpsc::channel();
+    buffer.slice(..).map_async(wgpu::MapMode::Read, move |r| {
+        let _ = tx.send(r);
+    });
+    device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    let data = buffer.slice(..).get_mapped_range().map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    for row in 0..h {
+        let start = (row * stride) as usize;
+        out.extend_from_slice(&data[start..start + (w * 4) as usize]);
+    }
+    Ok((w, h, out))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_back(_: &wgpu::Device, _: &wgpu::Queue, _: &Targets) -> Result<(u32, u32, Vec<u8>), String> {
+    Err("saving a picture isn't available in the browser yet".to_string())
+}
+
 impl<S: Host> rune::Compositor<S> for Gfx {
+    fn animating(&self) -> bool {
+        self.capture_armed
+    }
+
     fn render(&mut self, f: &mut rune::Frame<'_, S>) {
         let Some(view) = f.rt.state.viewport() else {
             f.draw_ui();
@@ -492,6 +550,22 @@ impl<S: Host> rune::Compositor<S> for Gfx {
             self.dev = Some(Dev::new(f.device, key));
         }
         let Some(dev) = self.dev.as_mut() else { return };
+        // Saving a picture takes two frames: one to draw the view as it now is, and this one
+        // to read that drawing back before drawing over it.
+        if f.rt.state.capture_wanted() {
+            if self.capture_armed {
+                self.capture_armed = false;
+                let image = match dev.targets.as_ref() {
+                    Some(t) => read_back(f.device, f.queue, t),
+                    None => Err("there was no 3D view to save".to_string()),
+                };
+                f.rt.state.captured(image);
+            } else {
+                self.capture_armed = true;
+            }
+        } else {
+            self.capture_armed = false;
+        }
         dev.targets(f.device, size);
         dev.mesh(f.device, &view);
         dev.blit_pipe(f.device, f.format);

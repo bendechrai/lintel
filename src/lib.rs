@@ -4,6 +4,7 @@ pub mod app;
 pub mod camera;
 pub mod catalog;
 pub mod edit;
+pub mod export;
 pub mod geo;
 pub mod geom;
 pub mod gfx;

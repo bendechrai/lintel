@@ -43,6 +43,35 @@ pub fn save(s: &mut State, tx: &mut Tx, ask: bool) {
     });
 }
 
+/// Saves the 3D or elevation view as a PNG.
+pub fn save_picture(s: &mut State, tx: &mut Tx) {
+    s.commit_editing();
+    let mut options = FileDialogOptions { title: "Save a picture of this view".into(), ..Default::default() }.filter("PNG image", &["png"]);
+    options.file_name = Some(format!("{}.png", s.project.name.to_lowercase().replace(' ', "-")));
+    tx.save_file(options, |s: &mut State, result, _| match result {
+        Ok(Some(path)) => s.capture = Some(path),
+        Ok(None) => {}
+        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+    });
+}
+
+/// Exports the house as a glTF 3D model.
+pub fn export_model(s: &mut State, tx: &mut Tx) {
+    s.commit_editing();
+    let mut options = FileDialogOptions { title: "Export the house as a 3D model".into(), ..Default::default() }.filter("glTF model", &["gltf"]);
+    options.file_name = Some(format!("{}.gltf", s.project.name.to_lowercase().replace(' ', "-")));
+    tx.save_file(options, |s: &mut State, result, _| match result {
+        Ok(Some(path)) => {
+            s.status = match std::fs::write(&path, crate::export::gltf(&s.project)) {
+                Ok(()) => format!("Exported {}. It opens in Blender and most 3D software.", path.display()),
+                Err(e) => format!("Couldn't write {}: {e}", path.display()),
+            }
+        }
+        Ok(None) => {}
+        Err(e) => s.status = format!("Couldn't show the Save dialog ({e})."),
+    });
+}
+
 /// Copies a link that opens this project in the browser.
 pub fn share(s: &mut State, tx: &mut Tx) {
     s.commit_editing();
@@ -213,7 +242,7 @@ fn options_bar(s: &State, th: &Th) -> El {
                     s.aim_elevation(false);
                 })));
             }
-            bar = bar.child(spacer()).child(ghost(th, "fit", "Fit", false).on_press(|s: &mut State| {
+            bar = bar.child(spacer()).child(ghost(th, "save-picture", "Save picture…", false).on_press_tx(save_picture)).child(ghost(th, "fit", "Fit", false).on_press(|s: &mut State| {
                 s.elevation_moved = false;
                 s.aim_elevation(true)
             }));
@@ -237,6 +266,8 @@ fn options_bar(s: &State, th: &Th) -> El {
             let ortho = matches!(s.camera.projection, Projection::Orthographic { .. });
             bar = bar
                 .child(spacer())
+                .child(ghost(th, "save-picture", "Save picture…", false).on_press_tx(save_picture))
+                .child(ghost(th, "export-model", "Export 3D…", false).on_press_tx(export_model))
                 .child(ghost(th, "projection", if ortho { "Parallel" } else { "Perspective" }, false).on_press(|s: &mut State| {
                     s.camera.projection = match s.camera.projection {
                         Projection::Perspective { fov_y } => Projection::Orthographic { height: 2.0 * s.camera.distance * (fov_y / 2.0).tan() },

@@ -307,6 +307,10 @@ const SCENES: &[(&str, fn(&mut State))] = &[
         s.aim_elevation(true);
     }),
     ("shot-plan", |s| s.bare = true),
+    ("capture", |s| {
+        s.set_view(ViewMode::Model);
+        s.capture = Some(std::env::temp_dir().join("lintel-capture-test.png"));
+    }),
     ("blank", |s| s.replace_project(sample::blank(), None)),
 ];
 

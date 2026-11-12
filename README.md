@@ -132,6 +132,13 @@ scale**, drag a line along anything whose real length you know, and type that le
 image is rescaled to match. Then draw walls over it. The project stores where the image file
 is, not the picture, so a shared link doesn't carry it.
 
+## Pictures and 3D export
+
+In the 3D and elevation views, **Save picture…** writes the view as a PNG at the window's
+full resolution, without the panels. **Export 3D…** writes the whole house as a single glTF
+file that opens in Blender and most 3D software; colours travel with it, Lintel's procedural
+grain and tile patterns don't.
+
 ## Share a house as a link
 
 **Share link** copies an address that opens the house in a browser, on a phone too. The

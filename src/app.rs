@@ -195,6 +195,8 @@ pub struct State {
     /// Which catalogue groups are folded open in the tool panel.
     pub open_groups: Vec<String>,
     pub lux: LuxView,
+    /// Where to save a picture of the 3D view, while one is being taken.
+    pub capture: Option<PathBuf>,
     /// Draw only the view, with no panels: for pictures of the house.
     pub bare: bool,
     /// Decodes floor plan images; set once the window is up.
@@ -269,6 +271,7 @@ impl State {
             drag_last: [0.0, 0.0],
             linking: None,
             bare: false,
+            capture: None,
             images: None,
             underlays: vec![],
             calibrate: None,
@@ -946,6 +949,18 @@ pub fn translate(project: &mut Project, before: &Project, pick: Pick, d: P2) {
 }
 
 impl Host for State {
+    fn capture_wanted(&self) -> bool {
+        self.capture.is_some()
+    }
+
+    fn captured(&mut self, image: Result<(u32, u32, Vec<u8>), String>) {
+        let Some(path) = self.capture.take() else { return };
+        self.status = match image.and_then(|(w, h, rgba)| crate::export::png(&path, w, h, &rgba).map(|()| (w, h))) {
+            Ok((w, h)) => format!("Saved {} ({w} × {h} pixels).", path.display()),
+            Err(e) => format!("Couldn't save the picture: {e}"),
+        };
+    }
+
     fn viewport(&self) -> Option<Viewport> {
         let camera = match self.view {
             ViewMode::Plan => return None,
